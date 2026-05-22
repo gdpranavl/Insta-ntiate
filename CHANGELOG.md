@@ -31,8 +31,8 @@
 - Added automatic dashboard polling so freshly synced archive data appears without manual JSON re-import.
 - Added deeper post-detail scraping by opening each saved post/reel in its own background tab.
 - Added repository-level agent guidance in `AGENTS.md`.
-- Added operational baton-pass documentation in `HANDOFF.md`.
 - Added `.gitignore` for local dependencies, build output, and local archive data.
+- Consolidated current-state guidance into `CONTEXT.md` and removed `HANDOFF.md` to keep the repo memory system lean.
 
 ### Decided
 - The product is for personal Instagram users managing their own accounts.

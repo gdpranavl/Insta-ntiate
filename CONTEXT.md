@@ -92,6 +92,12 @@ The extension-based direction is currently the preferred approach because it:
 - Real Instagram DOM validation is still required.
 - Video capture is best-effort only because Instagram may not expose stable direct video URLs in page markup.
 
+### Current Working State
+- The local development workflow assumes the Next.js app is running on `http://localhost:3000`.
+- The extension attempts to push harvested archive data directly to `http://localhost:3000/api/archive`.
+- JSON export still exists as a fallback debug path.
+- The main unstable area is Instagram metadata extraction for creator, caption, and video URL reliability.
+
 ## Important Product Assumptions
 - Users are comfortable installing a browser extension
 - Users will grant browser permissions needed for sync
@@ -118,7 +124,6 @@ The team currently has three members and wants better project continuity and tra
 - `CONTEXT.md` tracks current understanding and assumptions
 - `SYSTEM_ARCHITECTURE.md` tracks implementation shape and technical direction
 - `AGENTS.md` acts as the repository operating prompt for downstream agents
-- `HANDOFF.md` acts as the current-state baton pass for the next agent/session
 
 ## Immediate Next Step
 The next concrete build step after this checkpoint should be live validation in Chrome against a real logged-in Instagram session:
