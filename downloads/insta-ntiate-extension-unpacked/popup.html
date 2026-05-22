@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Insta-ntiate Collector</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="popup-shell">
+      <p class="eyebrow">Collector</p>
+      <h1>Insta-ntiate</h1>
+      <p class="lead">
+        Sync the first two saved collections and export the first five posts from each.
+      </p>
+
+      <button id="sync-button" class="primary" type="button">Sync Saved Collections</button>
+      <button id="export-button" class="secondary" type="button">Download Archive JSON</button>
+
+      <section class="settings-card">
+        <p class="status-label">Auto-sync interval</p>
+        <div class="interval-row">
+          <input id="interval-input" type="number" min="5" max="720" step="5" />
+          <button id="save-interval-button" class="secondary" type="button">Save Timer</button>
+        </div>
+        <p class="detail">Runs on Chrome startup and then on this repeating interval while Chrome is open.</p>
+        <p class="detail">Successful syncs are pushed to `http://localhost:3000/api/archive` by default.</p>
+      </section>
+
+      <div class="status-card">
+        <p class="status-label">Last status</p>
+        <strong id="status-text">Idle</strong>
+        <p id="status-detail" class="detail">No sync has run yet.</p>
+      </div>
+    </main>
+
+    <script src="./popup.js"></script>
+  </body>
+</html>
