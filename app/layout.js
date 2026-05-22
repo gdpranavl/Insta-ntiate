@@ -1,15 +1,17 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import { Jost, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const sans = Geist({
+const sans = Jost({
   subsets: ["latin"],
   display: "swap",
+  weight: ["200", "300", "400", "500", "600"],
   variable: "--font-sans"
 });
 
-const mono = Geist_Mono({
+const mono = JetBrains_Mono({
   subsets: ["latin"],
   display: "swap",
+  weight: ["300", "400"],
   variable: "--font-mono"
 });
 
@@ -20,7 +22,7 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: "#08070b",
+  themeColor: "#000000",
   width: "device-width",
   initialScale: 1
 };
@@ -48,7 +50,7 @@ const swRegisterScript = `
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>

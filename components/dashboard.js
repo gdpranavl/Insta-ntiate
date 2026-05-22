@@ -362,7 +362,7 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
           </div>
           <div className={styles.brandText}>
             <span className={styles.brandName}>Insta-ntiate</span>
-            <span className={styles.brandTag}>Saved, searchable.</span>
+            <span className={styles.brandTag}>Saved · Searchable</span>
           </div>
         </div>
         <nav className={styles.nav} aria-label="Primary">
@@ -373,11 +373,14 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
         <div className={styles.topbarCta}>
           {installEvent ? (
             <button type="button" className={styles.installPrompt} onClick={promptInstall}>
-              📱 Install
+              Install
             </button>
           ) : null}
           <div className={styles.themeMenu} role="group" aria-label="Theme">
-            {[{ id: "dark", label: "🌙" }, { id: "light", label: "☀" }].map((opt) => (
+            {[
+              { id: "dark", label: "Dark" },
+              { id: "light", label: "Light" }
+            ].map((opt) => (
               <button
                 key={opt.id}
                 type="button"
@@ -405,7 +408,7 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
               Zero-install · synced {relativeSync}
             </span>
             <h1 className={styles.heroTitle}>
-              Find that one reel you <em>saved three months ago.</em>
+              Find that one reel<em>you saved three months ago.</em>
             </h1>
             <p className={styles.heroLead}>
               Drag the button below to your bookmarks bar. Open Instagram, hit the bookmark,
@@ -413,16 +416,15 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
               export here. No extension required.
             </p>
             <div className={styles.heroActions}>
-              <a
+              <BookmarkletAnchor
+                bookmarkletHref={bookmarkletHref}
                 className={`${styles.bookmarklet} ${bookmarkletWiggling ? styles.bookmarkletWiggle : ""}`}
-                href={bookmarkletHref}
-                draggable="true"
                 onClick={onBookmarkletClick}
                 title="Drag this to your bookmarks bar"
               >
                 Drag to bookmarks
                 <span className={styles.bookmarkletHint}>Drag me up to your bookmarks bar</span>
-              </a>
+              </BookmarkletAnchor>
               <label className={`${styles.btn} ${styles.btnGhost}`}>
                 Upload IG export
                 <input hidden type="file" accept=".zip,.json" onChange={importJsonInline} />
@@ -457,6 +459,11 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
         </div>
       </section>
 
+      <div className={styles.sectionLabel}>
+        <span className={styles.sectionLabelText}>Overview</span>
+        <span className={styles.sectionLabelLine} />
+      </div>
+
       <section className={styles.stats}>
         <article className={styles.statCard}>
           <span className={styles.statLabel}>Posts</span>
@@ -479,6 +486,11 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
           <span className={styles.statHint}>matching current search</span>
         </article>
       </section>
+
+      <div className={styles.sectionLabel}>
+        <span className={styles.sectionLabelText}>Archive</span>
+        <span className={styles.sectionLabelLine} />
+      </div>
 
       <section className={styles.toolbar} aria-label="Search and filters">
         <div className={styles.searchWrap}>
@@ -561,7 +573,7 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
           <div className={styles.toolbarSpacer} />
           {cards.length > 0 ? (
             <button type="button" className={`${styles.chip}`} onClick={triggerRediscover} title="Surface a random post you haven't seen recently">
-              ✨ Rediscover
+              Rediscover
             </button>
           ) : null}
           {archive ? (
@@ -589,10 +601,9 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
             zero-install paths below. The dashboard updates live as data arrives.
           </p>
           <div className={styles.emptyCards}>
-            <a
+            <BookmarkletAnchor
+              bookmarkletHref={bookmarkletHref}
               className={styles.emptyCard}
-              href={bookmarkletHref}
-              draggable="true"
               onClick={onBookmarkletClick}
               title="Drag me to your bookmarks bar"
             >
@@ -602,7 +613,7 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
                 Drag this card up to your bookmarks bar. Visit Instagram saved pages,
                 click the bookmark, pick what to save. Works in any Chromium browser.
               </span>
-            </a>
+            </BookmarkletAnchor>
             <label className={styles.emptyCard}>
               <span className={styles.emptyCardIndex}>2</span>
               <span className={styles.emptyCardTitle}>Drop your IG data export</span>
@@ -646,14 +657,16 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
         </div>
       )}
 
+      <div className={styles.sectionLabel}>
+        <span className={styles.sectionLabelText}>Setup</span>
+        <span className={styles.sectionLabelLine} />
+      </div>
+
       <section id="setup" className={styles.setup}>
         <div className={styles.setupHeader}>
-          <div>
-            <p>Setup</p>
-            <h2>Three zero-install paths.</h2>
-          </div>
+          <h2>Three zero-install paths.</h2>
           <a className={`${styles.btn} ${styles.btnGhost}`} href="https://www.instagram.com/download/request/" target="_blank" rel="noreferrer">
-            Request my IG data →
+            Request IG data
           </a>
         </div>
         <div className={styles.steps}>
@@ -661,7 +674,7 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
             <span className={styles.stepIndex}>desktop</span>
             <h3 className={styles.stepTitle}>Bookmarklet (one drag)</h3>
             <p className={styles.stepCopy}>
-              Drag the pink button up there to your bookmarks bar. Visit your Instagram saved
+              Drag the chrome button up there to your bookmarks bar. Visit your Instagram saved
               page, click the bookmark, a floating panel asks which collections to save. Each
               click merges into your archive.
             </p>
@@ -721,8 +734,27 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
         </div>
       </details>
 
+      <section className={styles.metaFooter} aria-label="Project metadata">
+        <div className={styles.metaCell}>
+          <span className={styles.metaLabel}>Product</span>
+          <span className={styles.metaValue}>Insta-ntiate</span>
+        </div>
+        <div className={styles.metaCell}>
+          <span className={styles.metaLabel}>Style</span>
+          <span className={styles.metaValue}>Personal Archive</span>
+        </div>
+        <div className={styles.metaCell}>
+          <span className={styles.metaLabel}>Classification</span>
+          <span className={styles.metaValue}>Web · PWA · Extension</span>
+        </div>
+        <div className={styles.metaCell}>
+          <span className={styles.metaLabel}>Designed by</span>
+          <span className={styles.metaValue}>Team YouLeft</span>
+        </div>
+      </section>
+
       <footer className={styles.footer}>
-        <span>Insta-ntiate · prototype build · {appOrigin}</span>
+        <span>Prototype build · {appOrigin}</span>
         <span>v0.3 · {new Date(now).getFullYear()}</span>
       </footer>
 
@@ -750,7 +782,7 @@ export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
                 <p className={styles.lightboxCaption} style={{ color: "var(--ink-faint)" }}>No caption captured for this post.</p>
               )}
               <div className={styles.lightboxLinks}>
-                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={triggerRediscover}>Another one ✨</button>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={triggerRediscover}>Another one</button>
                 {rediscoverPost.canonicalUrl ? (
                   <a className={`${styles.btn} ${styles.btnGhost}`} href={rediscoverPost.canonicalUrl} target="_blank" rel="noreferrer">Open on Instagram ↗</a>
                 ) : null}
@@ -870,6 +902,26 @@ function Lightbox({ post, now, onClose }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function BookmarkletAnchor({ bookmarkletHref, className, onClick, title, children }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current && bookmarkletHref) {
+      ref.current.setAttribute("href", bookmarkletHref);
+    }
+  }, [bookmarkletHref]);
+  return (
+    <a
+      ref={ref}
+      className={className}
+      draggable
+      onClick={onClick}
+      title={title}
+    >
+      {children}
+    </a>
   );
 }
 
