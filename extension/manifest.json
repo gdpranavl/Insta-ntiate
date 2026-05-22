@@ -1,13 +1,22 @@
 {
   "manifest_version": 3,
   "name": "Insta-ntiate Collector",
-  "version": "0.1.0",
-  "description": "Harvest top Instagram saved collections into a local searchable archive.",
+  "version": "0.2.0",
+  "description": "Periodically back up your Instagram saved collections into your own searchable archive.",
   "permissions": ["storage", "tabs", "alarms", "scripting"],
-  "host_permissions": ["https://www.instagram.com/*", "http://localhost:3000/*"],
+  "host_permissions": [
+    "https://www.instagram.com/*",
+    "http://localhost/*",
+    "https://localhost/*"
+  ],
+  "optional_host_permissions": ["<all_urls>"],
   "action": {
     "default_title": "Insta-ntiate",
     "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   },
   "background": {
     "service_worker": "background.js",

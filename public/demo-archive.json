@@ -1,0 +1,97 @@
+{
+  "sourceAccount": {
+    "username": "demo.user",
+    "lastSyncedAt": "2026-05-23T10:14:00.000Z"
+  },
+  "syncRun": {
+    "status": "completed",
+    "trigger": "demo",
+    "startedAt": "2026-05-23T10:13:58.000Z",
+    "completedAt": "2026-05-23T10:14:00.000Z"
+  },
+  "collections": [
+    { "id": "c1", "title": "Design Boards", "url": "https://instagram.com/saved/design-boards", "position": 1 },
+    { "id": "c2", "title": "Travel Ideas", "url": "https://instagram.com/saved/travel-ideas", "position": 2 },
+    { "id": "c3", "title": "Recipes To Try", "url": "https://instagram.com/saved/recipes", "position": 3 }
+  ],
+  "posts": [
+    {
+      "id": "p1",
+      "shortcode": "ABC123",
+      "canonicalUrl": "https://instagram.com/p/ABC123/",
+      "creatorHandle": "@studiolens",
+      "caption": "Warm terracotta interiors and layered daylight references — moodboard for the autumn pitch deck.",
+      "mediaType": "image",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=900&q=80",
+      "videoUrl": "",
+      "capturedAt": "2026-05-23T10:14:00.000Z"
+    },
+    {
+      "id": "p2",
+      "shortcode": "DEF456",
+      "canonicalUrl": "https://instagram.com/reel/DEF456/",
+      "creatorHandle": "@packlight",
+      "caption": "Mountain cabin reel with packing list overlays. The carry-on belt trick at 0:42 is gold.",
+      "mediaType": "video",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
+      "videoUrl": "https://example.com/demo-video.mp4",
+      "capturedAt": "2026-05-23T10:14:00.000Z"
+    },
+    {
+      "id": "p3",
+      "shortcode": "GHI789",
+      "canonicalUrl": "https://instagram.com/p/GHI789/",
+      "creatorHandle": "@goldenhourkitchen",
+      "caption": "Slow-roast tomato pasta with brown butter & chili — saving for Sunday.",
+      "mediaType": "image",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?auto=format&fit=crop&w=900&q=80",
+      "videoUrl": "",
+      "capturedAt": "2026-05-23T10:14:00.000Z"
+    },
+    {
+      "id": "p4",
+      "shortcode": "JKL012",
+      "canonicalUrl": "https://instagram.com/reel/JKL012/",
+      "creatorHandle": "@northstreetstudio",
+      "caption": "Behind-the-scenes of the brand identity drop. Type pairing at the end is the take-home.",
+      "mediaType": "video",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=900&q=80",
+      "videoUrl": "https://example.com/demo-video-2.mp4",
+      "capturedAt": "2026-05-23T10:14:00.000Z"
+    },
+    {
+      "id": "p5",
+      "shortcode": "MNO345",
+      "canonicalUrl": "https://instagram.com/p/MNO345/",
+      "creatorHandle": "@thequietroom",
+      "caption": "Reading nook with linen curtains and a stoneware lamp — palette reference for the loft.",
+      "mediaType": "image",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1493663284031-b7e3aefcae8e?auto=format&fit=crop&w=900&q=80",
+      "videoUrl": "",
+      "capturedAt": "2026-05-23T10:14:00.000Z"
+    },
+    {
+      "id": "p6",
+      "shortcode": "PQR678",
+      "canonicalUrl": "https://instagram.com/p/PQR678/",
+      "creatorHandle": "@trailbynight",
+      "caption": "Lisbon at blue hour. Saving for the September trip list.",
+      "mediaType": "image",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1513735492246-483525079686?auto=format&fit=crop&w=900&q=80",
+      "videoUrl": "",
+      "capturedAt": "2026-05-23T10:14:00.000Z"
+    }
+  ],
+  "memberships": [
+    { "collectionId": "c1", "postId": "p1", "rank": 1 },
+    { "collectionId": "c1", "postId": "p4", "rank": 2 },
+    { "collectionId": "c1", "postId": "p5", "rank": 3 },
+    { "collectionId": "c2", "postId": "p2", "rank": 1 },
+    { "collectionId": "c2", "postId": "p6", "rank": 2 },
+    { "collectionId": "c3", "postId": "p3", "rank": 1 }
+  ],
+  "summary": {
+    "collectionsCaptured": 3,
+    "postsCaptured": 6
+  }
+}

@@ -1,362 +1,306 @@
 const ALARM_NAME = "insta-ntiate-sync";
-const COLLECTION_LIMIT = 2;
-const POSTS_PER_COLLECTION = 5;
-const HARDCODED_USERNAME = "thegdpranavl";
-const DEFAULT_SYNC_MINUTES = 30;
-const DEFAULT_APP_ENDPOINT = "http://localhost:3000/api/archive";
+const DEFAULT_SETTINGS = {
+  appEndpoint: "http://localhost:3000/api/archive",
+  syncIntervalMinutes: 60,
+  username: "",
+  selectedCollections: null,
+  perCollectionLimit: 0,
+  totalPostLimit: 0,
+  autoDetectUsername: true
+};
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   await ensureSettings();
   await scheduleSyncAlarm();
+  if (details.reason === "install") {
+    chrome.runtime.openOptionsPage?.();
+  }
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await ensureSettings();
   await scheduleSyncAlarm();
-  await runSync("startup");
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name !== ALARM_NAME) {
-    return;
-  }
-  await runSync("alarm");
+  if (alarm.name !== ALARM_NAME) return;
+  try { await runSync("alarm"); } catch (_) {}
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "RUN_SYNC") {
-    runSync("manual")
+    runSync(message.trigger || "manual")
       .then((result) => sendResponse({ ok: true, result }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
-
-  if (message?.type === "GET_ARCHIVE") {
-    chrome.storage.local.get(["archive"], (items) => {
-      sendResponse({ ok: true, archive: items.archive || null });
+  if (message?.type === "DISCOVER_COLLECTIONS") {
+    discoverCollections()
+      .then((payload) => sendResponse({ ok: true, payload }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message?.type === "GET_STATE") {
+    Promise.all([getSettings(), chrome.storage.local.get(["syncRun", "archive", "discovered"])]).then(([settings, items]) => {
+      sendResponse({ ok: true, settings, syncRun: items.syncRun || null, archive: items.archive || null, discovered: items.discovered || null });
     });
     return true;
   }
-
-  if (message?.type === "GET_SETTINGS") {
-    getSettings().then((settings) => sendResponse({ ok: true, settings }));
-    return true;
-  }
-
-  if (message?.type === "SET_SYNC_INTERVAL") {
-    setSyncInterval(message.minutes)
+  if (message?.type === "SAVE_SETTINGS") {
+    saveSettings(message.settings)
       .then((settings) => sendResponse({ ok: true, settings }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
-
   return false;
 });
 
+async function ensureSettings() {
+  const stored = (await chrome.storage.local.get(["settings"])).settings || {};
+  const merged = { ...DEFAULT_SETTINGS, ...stored };
+  await chrome.storage.local.set({ settings: merged });
+  return merged;
+}
+
+async function getSettings() {
+  return ensureSettings();
+}
+
+async function saveSettings(next) {
+  const current = await getSettings();
+  const merged = { ...current, ...next };
+  await chrome.storage.local.set({ settings: merged });
+  await scheduleSyncAlarm();
+  return merged;
+}
+
 async function scheduleSyncAlarm() {
   const settings = await getSettings();
-  await chrome.alarms.create(ALARM_NAME, {
-    delayInMinutes: 1,
-    periodInMinutes: settings.syncIntervalMinutes
-  });
+  const period = Math.max(5, Math.min(720, Number(settings.syncIntervalMinutes) || 60));
+  await chrome.alarms.clear(ALARM_NAME);
+  await chrome.alarms.create(ALARM_NAME, { delayInMinutes: 2, periodInMinutes: period });
 }
 
 async function runSync(trigger) {
   const startedAt = new Date().toISOString();
-  const syncRun = {
-    trigger,
-    startedAt,
-    status: "running",
-    errors: []
-  };
-
+  const syncRun = { trigger, startedAt, status: "running", errors: [] };
   await chrome.storage.local.set({ syncRun });
 
   try {
-    const account = await scrapeSavedCollections();
+    const settings = await getSettings();
+    let username = settings.username;
+    if (!username && settings.autoDetectUsername) {
+      username = await detectUsername();
+      if (username) await saveSettings({ username });
+    }
+    if (!username) {
+      throw new Error("No Instagram username configured. Open Insta-ntiate options to set it, or log into Instagram once.");
+    }
+
+    const discovery = await scrapeSavedOverview(username);
+    const allCollections = discovery.collections;
+    const selected = pickCollections(allCollections, settings.selectedCollections);
+    const perLimit = Math.max(0, Number(settings.perCollectionLimit) || 0);
+
+    const collections = [];
+    const posts = [];
+    const memberships = [];
+    const errors = [];
+    let postsCollected = 0;
+    const totalLimit = Math.max(0, Number(settings.totalPostLimit) || 0);
+
+    for (const overviewCollection of selected) {
+      if (totalLimit && postsCollected >= totalLimit) break;
+      let collectionTab = null;
+      try {
+        collectionTab = await createBackgroundTab(overviewCollection.url);
+        const remaining = totalLimit ? totalLimit - postsCollected : 0;
+        const detail = await sendTabMessage(collectionTab.id, {
+          type: "SCRAPE_COLLECTION_DETAIL",
+          collection: overviewCollection,
+          postLimit: perLimit || (remaining || 0)
+        });
+        collections.push({
+          id: detail.collection.id,
+          title: detail.collection.title,
+          url: detail.collection.url,
+          position: collections.length + 1,
+          capturedAt: new Date().toISOString()
+        });
+        for (const postOverview of detail.posts || []) {
+          if (totalLimit && postsCollected >= totalLimit) break;
+          let detailTab = null;
+          try {
+            detailTab = await createBackgroundTab(postOverview.canonicalUrl);
+            const post = await sendTabMessage(detailTab.id, {
+              type: "SCRAPE_POST_DETAIL",
+              post: postOverview,
+              collectionTitle: detail.collection.title
+            });
+            posts.push({ ...post, enrichments: post.enrichments || {} });
+            memberships.push({
+              collectionId: detail.collection.id,
+              postId: post.id,
+              rank: postOverview.rank,
+              capturedAt: new Date().toISOString()
+            });
+            postsCollected += 1;
+          } catch (error) {
+            errors.push(`post ${postOverview.canonicalUrl}: ${error.message}`);
+          } finally {
+            if (detailTab?.id) await safelyCloseTab(detailTab.id);
+          }
+        }
+      } catch (error) {
+        errors.push(`collection ${overviewCollection.url}: ${error.message}`);
+      } finally {
+        if (collectionTab?.id) await safelyCloseTab(collectionTab.id);
+      }
+    }
+
     const archive = {
-      sourceAccount: {
-        username: account.username || HARDCODED_USERNAME,
-        lastSyncedAt: new Date().toISOString()
-      },
-      syncRun: {
-        ...syncRun,
-        completedAt: new Date().toISOString(),
-        status: "completed"
-      },
-      collections: account.collections,
-      posts: account.posts,
-      memberships: account.memberships,
-      summary: {
-        collectionsCaptured: account.collections.length,
-        postsCaptured: account.posts.length
-      },
+      sourceAccount: { username, lastSyncedAt: new Date().toISOString() },
+      syncRun: { ...syncRun, completedAt: new Date().toISOString(), status: errors.length ? "completed-with-warnings" : "completed", errors },
+      collections,
+      posts: dedupePosts(posts),
+      memberships,
+      summary: { collectionsCaptured: collections.length, postsCaptured: posts.length },
       notes: [
-        "This collector is intentionally bounded to the first two collections and first five posts per collection.",
-        `Saved route is currently hard-coded to @${HARDCODED_USERNAME} for debugging.`,
-        "Each saved item is opened in its own background tab so creator, caption, thumbnail, and video URL can be collected more reliably."
+        `Scope: ${settings.selectedCollections ? settings.selectedCollections.length : "all"} collection(s)`,
+        perLimit ? `Per-collection cap: ${perLimit}` : "No per-collection cap",
+        totalLimit ? `Total post cap: ${totalLimit}` : "No total cap"
       ],
-      warnings: []
+      warnings: errors,
+      discoveredCollections: allCollections
     };
-
-    if (!archive.collections.length) {
-      throw new Error("Sync completed without any saved collections.");
-    }
-
-    if (!archive.posts.length) {
-      throw new Error("Sync completed without any captured posts.");
-    }
 
     await chrome.storage.local.set({
       archive,
-      syncRun: archive.syncRun
+      syncRun: archive.syncRun,
+      discovered: { at: new Date().toISOString(), collections: allCollections }
     });
 
-    try {
-      await pushArchiveToApp(archive);
-    } catch (error) {
+    try { await pushArchiveToApp(archive); }
+    catch (error) {
       archive.warnings.push(error.message);
       await chrome.storage.local.set({ archive });
     }
 
     return archive;
   } catch (error) {
-    const failedRun = {
-      ...syncRun,
-      completedAt: new Date().toISOString(),
-      status: "failed",
-      errors: [error.message]
-    };
+    const failedRun = { ...syncRun, completedAt: new Date().toISOString(), status: "failed", errors: [error.message] };
     await chrome.storage.local.set({ syncRun: failedRun });
     throw error;
   }
 }
 
-async function scrapeSavedCollections() {
-  const root = await scrapeSavedOverviewWithFallback();
-  const savedTab = root.tab;
+async function discoverCollections() {
+  const settings = await getSettings();
+  let username = settings.username;
+  if (!username && settings.autoDetectUsername) {
+    username = await detectUsername();
+    if (username) await saveSettings({ username });
+  }
+  if (!username) throw new Error("Could not detect your Instagram username. Make sure you are logged into instagram.com in this browser.");
+  const overview = await scrapeSavedOverview(username);
+  await chrome.storage.local.set({ discovered: { at: new Date().toISOString(), collections: overview.collections } });
+  return overview;
+}
 
+async function detectUsername() {
+  const tab = await createBackgroundTab("https://www.instagram.com/");
   try {
-    const collections = [];
-    const posts = [];
-    const memberships = [];
-
-    for (const overviewCollection of root.collections || []) {
-      const collectionTab = await createBackgroundTab(overviewCollection.url);
-
-      try {
-        const details = await sendTabMessage(collectionTab.id, {
-          type: "SCRAPE_COLLECTION_DETAIL",
-          collection: overviewCollection,
-          postLimit: POSTS_PER_COLLECTION
-        });
-
-        collections.push({
-          id: details.collection.id,
-          title: details.collection.title,
-          url: details.collection.url,
-          position: details.collection.position
-        });
-
-        for (const postOverview of details.posts || []) {
-          const detailTab = await createBackgroundTab(postOverview.canonicalUrl);
-
-          try {
-            const post = await sendTabMessage(detailTab.id, {
-              type: "SCRAPE_POST_DETAIL",
-              post: postOverview,
-              collectionTitle: details.collection.title
-            });
-
-            posts.push(post);
-            memberships.push({
-              collectionId: details.collection.id,
-              postId: post.id,
-              rank: post.rank,
-              capturedAt: new Date().toISOString()
-            });
-          } finally {
-            if (detailTab?.id) {
-              await chrome.tabs.remove(detailTab.id);
-            }
-          }
-        }
-      } finally {
-        if (collectionTab?.id) {
-          await chrome.tabs.remove(collectionTab.id);
-        }
-      }
-    }
-
-    return {
-      username: root.username,
-      collections,
-      posts: dedupePosts(posts),
-      memberships
-    };
+    const result = await sendTabMessage(tab.id, { type: "SCRAPE_USERNAME" });
+    return result.username || "";
   } finally {
-    if (savedTab?.id) {
-      await chrome.tabs.remove(savedTab.id);
-    }
+    await safelyCloseTab(tab.id);
   }
 }
 
-async function scrapeSavedOverviewWithFallback() {
-  const candidateUrls = [
-    `https://www.instagram.com/${HARDCODED_USERNAME}/saved/`,
+async function scrapeSavedOverview(username) {
+  const candidates = [
+    `https://www.instagram.com/${username}/saved/`,
     "https://www.instagram.com/your_activity/interactions/saved/",
     "https://www.instagram.com/saved/"
   ];
-
   const errors = [];
-
-  for (const url of candidateUrls) {
+  for (const url of candidates) {
     const tab = await createBackgroundTab(url);
-
     try {
-      const payload = await sendTabMessage(tab.id, {
-        type: "SCRAPE_SAVED_OVERVIEW",
-        collectionLimit: COLLECTION_LIMIT
-      });
-
-      return {
-        ...payload,
-        username: payload.username || HARDCODED_USERNAME,
-        tab
-      };
+      const payload = await sendTabMessage(tab.id, { type: "SCRAPE_SAVED_OVERVIEW" });
+      return { ...payload, username: payload.username || username };
     } catch (error) {
       errors.push(`${url}: ${error.message}`);
-      if (tab?.id) {
-        await chrome.tabs.remove(tab.id);
-      }
+    } finally {
+      await safelyCloseTab(tab.id);
     }
   }
+  throw new Error(`Could not reach saved collections. Tried: ${errors.join(" | ")}`);
+}
 
-  throw new Error(`Could not access saved collections. ${errors.join(" | ")}`);
+function pickCollections(all, selectedIds) {
+  if (!selectedIds || !selectedIds.length) return all;
+  const wanted = new Set(selectedIds);
+  return all.filter((c) => wanted.has(c.id));
 }
 
 async function createBackgroundTab(url) {
   return chrome.tabs.create({ url, active: false });
 }
 
+async function safelyCloseTab(tabId) {
+  try { await chrome.tabs.remove(tabId); } catch (_) {}
+}
+
 async function sendTabMessage(tabId, message) {
   await waitForTabReady(tabId);
-
   let lastError = null;
   for (let attempt = 0; attempt < 20; attempt += 1) {
     try {
       const response = await chrome.tabs.sendMessage(tabId, message);
-      if (response?.ok) {
-        return response.payload;
-      }
-      if (response && response.ok === false) {
-        lastError = new Error(response.error || "Scrape step failed.");
-      }
+      if (response?.ok) return response.payload;
+      if (response?.ok === false) lastError = new Error(response.error || "Scrape step failed.");
     } catch (error) {
       lastError = error;
     }
-
     await delay(600);
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (!tab) break;
+    } catch {
+      break;
+    }
   }
-
-  throw new Error(lastError?.message || `Could not collect Instagram data from tab ${tabId}.`);
+  throw new Error(lastError?.message || `Could not collect data from tab ${tabId}.`);
 }
 
 function waitForTabReady(tabId) {
   return new Promise((resolve) => {
     let settled = false;
-
-    const finish = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      chrome.tabs.onUpdated.removeListener(listener);
-      resolve();
-    };
-
-    const listener = (updatedTabId, changeInfo) => {
-      if (updatedTabId === tabId && changeInfo.status === "complete") {
-        setTimeout(finish, 1800);
-      }
-    };
-
+    const finish = () => { if (settled) return; settled = true; chrome.tabs.onUpdated.removeListener(listener); resolve(); };
+    const listener = (id, change) => { if (id === tabId && change.status === "complete") setTimeout(finish, 1800); };
     chrome.tabs.onUpdated.addListener(listener);
-
-    chrome.tabs.get(tabId, (tab) => {
-      if (tab?.status === "complete") {
-        setTimeout(finish, 1800);
-      }
-    });
-
-    setTimeout(finish, 12000);
+    chrome.tabs.get(tabId, (tab) => { if (tab?.status === "complete") setTimeout(finish, 1800); });
+    setTimeout(finish, 14000);
   });
 }
 
 function dedupePosts(posts) {
   const seen = new Map();
-
-  for (const post of posts) {
-    if (!seen.has(post.id)) {
-      seen.set(post.id, post);
-    }
-  }
-
+  for (const post of posts) if (post?.id && !seen.has(post.id)) seen.set(post.id, post);
   return Array.from(seen.values());
 }
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function ensureSettings() {
-  const settings = await getSettings();
-  if (!settings?.syncIntervalMinutes || !settings?.appEndpoint) {
-    await chrome.storage.local.set({
-      settings: {
-        syncIntervalMinutes: settings.syncIntervalMinutes || DEFAULT_SYNC_MINUTES,
-        appEndpoint: settings.appEndpoint || DEFAULT_APP_ENDPOINT
-      }
-    });
-  }
-}
-
-async function getSettings() {
-  const items = await chrome.storage.local.get(["settings"]);
-  return {
-    syncIntervalMinutes: items.settings?.syncIntervalMinutes || DEFAULT_SYNC_MINUTES,
-    appEndpoint: items.settings?.appEndpoint || DEFAULT_APP_ENDPOINT
-  };
-}
-
-async function setSyncInterval(minutes) {
-  const parsed = Number(minutes);
-  if (!Number.isFinite(parsed) || parsed < 5 || parsed > 720) {
-    throw new Error("Sync interval must be between 5 and 720 minutes.");
-  }
-
-  const settings = await getSettings();
-  const nextSettings = {
-    ...settings,
-    syncIntervalMinutes: Math.round(parsed)
-  };
-
-  await chrome.storage.local.set({ settings: nextSettings });
-  await scheduleSyncAlarm();
-  return nextSettings;
-}
+function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 async function pushArchiveToApp(archive) {
-  const settings = await getSettings();
-  const response = await fetch(settings.appEndpoint, {
+  const { appEndpoint } = await getSettings();
+  const response = await fetch(appEndpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json", "X-Instantiate-Mode": "merge" },
     body: JSON.stringify(archive)
   });
-
   if (!response.ok) {
-    throw new Error(`Archive push failed at ${settings.appEndpoint}. Make sure the Next app is running.`);
+    throw new Error(`Archive push failed at ${appEndpoint} (HTTP ${response.status}). Is the Insta-ntiate app running?`);
   }
 }

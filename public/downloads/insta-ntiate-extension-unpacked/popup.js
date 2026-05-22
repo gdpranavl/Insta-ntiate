@@ -1,94 +1,54 @@
-const syncButton = document.getElementById("sync-button");
-const exportButton = document.getElementById("export-button");
-const intervalInput = document.getElementById("interval-input");
-const saveIntervalButton = document.getElementById("save-interval-button");
-const statusText = document.getElementById("status-text");
-const statusDetail = document.getElementById("status-detail");
+const statusText = document.getElementById("statusText");
+const statusDetail = document.getElementById("statusDetail");
 
-syncButton.addEventListener("click", async () => {
-  setStatus("Running", "Opening Instagram saved collections in background tabs.");
-
-  const response = await chrome.runtime.sendMessage({ type: "RUN_SYNC" });
-
+document.getElementById("syncBtn").addEventListener("click", async () => {
+  setStatus("Running", "Opening Instagram in background tabs.");
+  const response = await chrome.runtime.sendMessage({ type: "RUN_SYNC", trigger: "popup" });
   if (!response?.ok) {
     setStatus("Failed", response?.error || "Sync failed.");
     return;
   }
-
-  const archive = response.result;
-  const collectionCount = archive.collections?.length || 0;
-  const postCount = archive.posts?.length || 0;
-  setStatus("Completed", `Captured ${collectionCount} collections and ${postCount} posts.`);
+  const a = response.result;
+  setStatus("Synced", `Captured ${a.summary.postsCaptured} posts across ${a.summary.collectionsCaptured} collection(s).`);
 });
 
-exportButton.addEventListener("click", async () => {
-  const response = await chrome.runtime.sendMessage({ type: "GET_ARCHIVE" });
+document.getElementById("optionsBtn").addEventListener("click", () => {
+  chrome.runtime.openOptionsPage?.();
+});
 
+document.getElementById("exportBtn").addEventListener("click", async () => {
+  const response = await chrome.runtime.sendMessage({ type: "GET_STATE" });
   if (!response?.ok || !response.archive) {
-    setStatus("No archive", "Run a sync before exporting.");
+    setStatus("No archive", "Sync first, then export.");
     return;
   }
-
-  if (!response.archive.posts?.length) {
-    setStatus("No data", "The last sync did not capture any posts, so nothing useful was exported.");
-    return;
-  }
-
   const json = JSON.stringify(response.archive, null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "insta-ntiate-archive.json";
-  anchor.click();
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "insta-ntiate-archive.json";
+  a.click();
   URL.revokeObjectURL(url);
   setStatus("Exported", "Archive JSON downloaded.");
 });
 
-saveIntervalButton.addEventListener("click", async () => {
-  const minutes = Number(intervalInput.value);
-  const response = await chrome.runtime.sendMessage({
-    type: "SET_SYNC_INTERVAL",
-    minutes,
-  });
+hydrate();
 
-  if (!response?.ok) {
-    setStatus("Timer error", response?.error || "Could not save interval.");
+async function hydrate() {
+  const response = await chrome.runtime.sendMessage({ type: "GET_STATE" });
+  if (!response?.ok) return;
+  const run = response.syncRun;
+  if (!run) {
+    setStatus("Idle", "No sync yet.");
     return;
   }
-
-  intervalInput.value = String(response.settings.syncIntervalMinutes);
-  setStatus("Timer saved", `Auto-sync interval set to ${response.settings.syncIntervalMinutes} minutes.`);
-});
-
-hydrateStatus();
-hydrateSettings();
-
-function hydrateStatus() {
-  chrome.storage.local.get(["syncRun", "archive"], (items) => {
-    const run = items.syncRun;
-    if (!run) {
-      return;
-    }
-
-    const archive = items.archive;
-    const detail =
-      run.status === "completed"
-        ? `Last completed at ${new Date(run.completedAt).toLocaleString()} with ${archive?.summary?.postsCaptured || 0} posts.`
-        : run.errors?.[0] || "Last run did not complete.";
-
-    setStatus(capitalize(run.status), detail);
-  });
-}
-
-function hydrateSettings() {
-  chrome.runtime.sendMessage({ type: "GET_SETTINGS" }, (response) => {
-    if (!response?.ok) {
-      return;
-    }
-
-    intervalInput.value = String(response.settings.syncIntervalMinutes);
-  });
+  const at = run.completedAt ? new Date(run.completedAt).toLocaleTimeString() : "—";
+  if (run.status === "failed") {
+    setStatus("Failed", run.errors?.[0] || "Last run failed.");
+  } else {
+    setStatus(capitalize(run.status), `Last run ${at} · ${response.archive?.summary?.postsCaptured || 0} posts.`);
+  }
 }
 
 function setStatus(title, detail) {

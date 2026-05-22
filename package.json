@@ -4,11 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "predev": "node scripts/build-extension.mjs",
+    "prebuild": "node scripts/build-extension.mjs",
     "build": "next build",
+    "build:extension": "node scripts/build-extension.mjs",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "next": "^16.2.6",
     "react": "19.1.0",
     "react-dom": "19.1.0"

@@ -1,357 +1,925 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "@/app/page.module.css";
 
-const demoArchive = {
-  sourceAccount: {
-    username: "demo.user",
-    lastSyncedAt: "2026-05-22T18:30:00.000Z"
-  },
-  collections: [
-    { id: "c1", title: "Design Boards", url: "https://instagram.com/saved/design-boards", position: 1 },
-    { id: "c2", title: "Travel Ideas", url: "https://instagram.com/saved/travel-ideas", position: 2 }
-  ],
-  posts: [
-    {
-      id: "p1",
-      shortcode: "ABC123",
-      canonicalUrl: "https://instagram.com/p/ABC123/",
-      creatorHandle: "@studiolens",
-      caption: "Warm terracotta interiors and layered daylight references.",
-      mediaType: "image",
-      thumbnailUrl: "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=900&q=80",
-      videoUrl: "",
-      capturedAt: "2026-05-22T18:31:00.000Z"
-    },
-    {
-      id: "p2",
-      shortcode: "DEF456",
-      canonicalUrl: "https://instagram.com/reel/DEF456/",
-      creatorHandle: "@packlight",
-      caption: "Mountain cabin reel with packing list overlays and travel hooks.",
-      mediaType: "video",
-      thumbnailUrl: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
-      videoUrl: "https://example.com/demo-video.mp4",
-      capturedAt: "2026-05-22T18:31:00.000Z"
-    }
-  ],
-  memberships: [
-    { collectionId: "c1", postId: "p1", rank: 1 },
-    { collectionId: "c2", postId: "p2", rank: 1 }
-  ],
-  summary: {
-    collectionsCaptured: 2,
-    postsCaptured: 2
-  }
-};
+const POLL_INTERVALS_MS = [4000, 12000, 60000];
+const NO_CHANGE_STEPS_PER_STAGE = 3;
+const RELATIVE_TICK_MS = 30000;
+const VIEWED_KEY = "instantiate-viewed";
+const THEME_KEY = "instantiate-theme";
 
-export function Dashboard({ initialArchive }) {
+export function Dashboard({ initialArchive, appOrigin, bookmarkletHref }) {
   const [archive, setArchive] = useState(initialArchive);
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("");
+  const [mediaFilter, setMediaFilter] = useState("all");
+  const [selectedCollections, setSelectedCollections] = useState(() => new Set());
+  const [activePost, setActivePost] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showRediscover, setShowRediscover] = useState(false);
+  const [rediscoverPost, setRediscoverPost] = useState(null);
+  const [theme, setTheme] = useState("dark");
+  const [spotlightOpen, setSpotlightOpen] = useState(false);
+  const [spotlightIndex, setSpotlightIndex] = useState(0);
+  const [installEvent, setInstallEvent] = useState(null);
+  const [bookmarkletWiggling, setBookmarkletWiggling] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
+
+  const searchRef = useRef(null);
+  const lastSerializedRef = useRef(JSON.stringify(initialArchive || null));
+  const noChangeCountRef = useRef(0);
+  const viewedRef = useRef(new Set());
 
   useEffect(() => {
-    const intervalId = window.setInterval(async () => {
-      try {
-        const response = await fetch("/api/archive", { cache: "no-store" });
-        if (!response.ok) {
-          return;
-        }
-        const payload = await response.json();
-        if (payload.archive) {
-          setArchive(payload.archive);
-        }
-      } catch (_error) {
-      }
-    }, 4000);
+    try {
+      const stored = localStorage.getItem(THEME_KEY) || "dark";
+      setTheme(stored);
+    } catch {}
+    try {
+      const v = JSON.parse(localStorage.getItem(VIEWED_KEY) || "[]");
+      viewedRef.current = new Set(v);
+    } catch {}
+    const seen = sessionStorage.getItem("instantiate-bookmarklet-wiggle-shown");
+    if (!seen) {
+      setBookmarkletWiggling(true);
+      sessionStorage.setItem("instantiate-bookmarklet-wiggle-shown", "1");
+      setTimeout(() => setBookmarkletWiggling(false), 3000);
+    }
+  }, []);
 
-    return () => window.clearInterval(intervalId);
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), RELATIVE_TICK_MS);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!status) return;
+    const id = window.setTimeout(() => setStatus(null), 4500);
+    return () => window.clearTimeout(id);
+  }, [status]);
+
+  useEffect(() => {
+    let timeoutId = null;
+    let cancelled = false;
+    const stageMs = () => {
+      const stage = Math.min(POLL_INTERVALS_MS.length - 1, Math.floor(noChangeCountRef.current / NO_CHANGE_STEPS_PER_STAGE));
+      return POLL_INTERVALS_MS[stage];
+    };
+    const tick = async () => {
+      if (cancelled) return;
+      if (document.visibilityState !== "visible") {
+        timeoutId = window.setTimeout(tick, POLL_INTERVALS_MS[POLL_INTERVALS_MS.length - 1]);
+        return;
+      }
+      try {
+        const res = await fetch("/api/archive", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          const next = data.archive ?? null;
+          const serialized = JSON.stringify(next);
+          if (serialized !== lastSerializedRef.current) {
+            lastSerializedRef.current = serialized;
+            noChangeCountRef.current = 0;
+            applyArchiveTransition(next, setArchive);
+          } else {
+            noChangeCountRef.current += 1;
+          }
+        }
+      } catch {
+        noChangeCountRef.current += 1;
+      }
+      if (!cancelled) timeoutId = window.setTimeout(tick, stageMs());
+    };
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        window.clearTimeout(timeoutId);
+        noChangeCountRef.current = 0;
+        timeoutId = window.setTimeout(tick, 200);
+      }
+    };
+    timeoutId = window.setTimeout(tick, POLL_INTERVALS_MS[0]);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (event) => {
+      const meta = event.metaKey || event.ctrlKey;
+      if (meta && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+        setSpotlightOpen(true);
+        return;
+      }
+      if (event.key === "?" && !isTypingTarget(event.target)) {
+        event.preventDefault();
+        setShowShortcuts((s) => !s);
+        return;
+      }
+      if (event.key === "Escape") {
+        if (showShortcuts) { setShowShortcuts(false); return; }
+        if (showRediscover) { setShowRediscover(false); return; }
+        if (activePost) { setActivePost(null); return; }
+        if (spotlightOpen) { setSpotlightOpen(false); searchRef.current?.blur(); return; }
+        if (query) setQuery("");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activePost, query, showShortcuts, showRediscover, spotlightOpen]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shared = params.get("shared");
+    if (shared === "ok") setStatus({ tone: "info", text: "Saved from share sheet to your archive." });
+    if (shared === "invalid") setStatus({ tone: "warn", text: "That share didn't include an Instagram URL." });
+    if (params.get("bookmarklet") === "needs-instagram") setStatus({ tone: "warn", text: "Open Instagram first, then click the bookmark." });
+    if (params.get("rediscover") === "1") triggerRediscover();
+    if (shared || params.get("bookmarklet") || params.get("rediscover")) {
+      const clean = window.location.pathname;
+      window.history.replaceState({}, "", clean);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = (event) => {
+      event.preventDefault();
+      setInstallEvent(event);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const applyTheme = useCallback((next) => {
+    setTheme(next);
+    try {
+      localStorage.setItem(THEME_KEY, next);
+      document.documentElement.setAttribute("data-theme", next);
+    } catch {}
   }, []);
 
   const cards = useMemo(() => {
     const collections = archive?.collections || [];
     const posts = archive?.posts || [];
     const memberships = archive?.memberships || [];
-    const collectionMap = new Map(collections.map((collection) => [collection.id, collection]));
-    const membershipsByPost = new Map();
-
-    memberships.forEach((membership) => {
-      const list = membershipsByPost.get(membership.postId) || [];
-      const collection = collectionMap.get(membership.collectionId);
-      list.push(collection?.title || "Untitled collection");
-      membershipsByPost.set(membership.postId, list);
-    });
-
-    return posts.map((post) => ({
-      ...post,
-      collections: membershipsByPost.get(post.id) || []
-    }));
+    const collectionMap = new Map(collections.map((c) => [c.id, c]));
+    const byPost = new Map();
+    for (const m of memberships) {
+      const list = byPost.get(m.postId) || [];
+      const c = collectionMap.get(m.collectionId);
+      if (c) list.push(c);
+      byPost.set(m.postId, list);
+    }
+    return posts.map((post) => ({ ...post, collections: byPost.get(post.id) || [] }));
   }, [archive]);
 
-  const filteredCards = useMemo(() => {
-    const lower = query.trim().toLowerCase();
-    if (!lower) {
-      return cards;
-    }
-
-    return cards.filter((card) =>
-      [card.caption, card.creatorHandle, card.canonicalUrl, ...(card.collections || [])]
-        .join(" ")
-        .toLowerCase()
-        .includes(lower)
-    );
-  }, [cards, query]);
-
-  async function importArchive(event) {
-    const [file] = event.target.files || [];
-    if (!file) {
-      return;
-    }
-
-    try {
-      const text = await file.text();
-      const nextArchive = JSON.parse(text);
-      const response = await fetch("/api/archive", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(nextArchive)
-      });
-
-      if (!response.ok) {
-        throw new Error("Upload failed");
+  const collectionFacets = useMemo(() => {
+    const counts = new Map();
+    for (const card of cards) {
+      for (const collection of card.collections) {
+        const current = counts.get(collection.id) || { collection, count: 0 };
+        current.count += 1;
+        counts.set(collection.id, current);
       }
-
-      setArchive(nextArchive);
-      setStatus("Archive imported into the app store.");
-    } catch (_error) {
-      setStatus("Could not import that archive JSON.");
     }
-  }
+    return Array.from(counts.values()).sort((a, b) => b.count - a.count);
+  }, [cards]);
 
-  async function clearArchive() {
-    await fetch("/api/archive", { method: "DELETE" });
-    setArchive(null);
-    setQuery("");
-    setStatus("Stored archive cleared.");
-  }
-
-  async function loadDemo() {
-    await fetch("/api/archive", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(demoArchive)
+  const filteredCards = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return cards.filter((card) => {
+      if (mediaFilter !== "all") {
+        const isVideo = card.mediaType === "video" || Boolean(card.videoUrl);
+        if (mediaFilter === "video" && !isVideo) return false;
+        if (mediaFilter === "image" && isVideo) return false;
+      }
+      if (selectedCollections.size > 0) {
+        const ids = new Set(card.collections.map((c) => c.id));
+        let match = false;
+        for (const id of selectedCollections) if (ids.has(id)) { match = true; break; }
+        if (!match) return false;
+      }
+      if (!q) return true;
+      const haystack = [
+        card.caption, card.creatorHandle, card.canonicalUrl, card.shortcode,
+        ...card.collections.map((c) => c.title)
+      ].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(q);
     });
-    setArchive(demoArchive);
-    setStatus("Demo archive loaded into the app store.");
-  }
+  }, [cards, query, mediaFilter, selectedCollections]);
+
+  const spotlightResults = useMemo(() => {
+    if (!query.trim()) return [];
+    return filteredCards.slice(0, 6);
+  }, [filteredCards, query]);
+
+  useEffect(() => { setSpotlightIndex(0); }, [spotlightResults.length, query]);
 
   const postCount = archive?.posts?.length || 0;
   const collectionCount = archive?.collections?.length || 0;
-  const videoCount = (archive?.posts || []).filter((post) => Boolean(post.videoUrl)).length;
-  const syncStamp = archive?.sourceAccount?.lastSyncedAt || archive?.syncRun?.completedAt;
+  const videoCount = (archive?.posts || []).filter((p) => p.mediaType === "video" || Boolean(p.videoUrl)).length;
+  const lastSyncedAt = archive?.sourceAccount?.lastSyncedAt || archive?.syncRun?.completedAt || null;
+  const syncStatus = archive?.syncRun?.status || (archive ? "completed" : "idle");
+  const health = computeHealth(syncStatus, lastSyncedAt, now);
+  const relativeSync = lastSyncedAt ? relativeTime(lastSyncedAt, now) : "never";
+
+  const toggleCollection = useCallback((id) => {
+    setSelectedCollections((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const setFilterWithTransition = useCallback((updater) => {
+    if (typeof document !== "undefined" && document.startViewTransition) {
+      document.startViewTransition(() => updater());
+    } else {
+      updater();
+    }
+  }, []);
+
+  const clearArchive = useCallback(async () => {
+    await fetch("/api/archive", { method: "DELETE" });
+    setArchive(null);
+    setQuery("");
+    setSelectedCollections(new Set());
+    lastSerializedRef.current = JSON.stringify(null);
+    setStatus({ tone: "info", text: "Local archive cleared." });
+  }, []);
+
+  const loadDemo = useCallback(async () => {
+    try {
+      const res = await fetch("/demo-archive.json", { cache: "no-store" });
+      const demo = await res.json();
+      await fetch("/api/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(demo)
+      });
+      setArchive(demo);
+      lastSerializedRef.current = JSON.stringify(demo);
+      setStatus({ tone: "info", text: "Demo archive loaded." });
+    } catch {
+      setStatus({ tone: "warn", text: "Could not load demo." });
+    }
+  }, []);
+
+  const importJsonInline = useCallback(async (event) => {
+    const [file] = event.target.files || [];
+    if (!file) return;
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/import", { method: "POST", body: form });
+      if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
+      const data = await res.json();
+      setArchive(data.archive);
+      lastSerializedRef.current = JSON.stringify(data.archive);
+      setStatus({ tone: "info", text: `Imported · ${data.summary.posts} posts across ${data.summary.collections} collection(s).` });
+    } catch (error) {
+      setStatus({ tone: "warn", text: error.message });
+    } finally {
+      event.target.value = "";
+    }
+  }, []);
+
+  const onDrop = useCallback(async (event) => {
+    event.preventDefault();
+    setDropActive(false);
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/import", { method: "POST", body: form });
+      if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
+      const data = await res.json();
+      setArchive(data.archive);
+      lastSerializedRef.current = JSON.stringify(data.archive);
+      setStatus({ tone: "info", text: `Imported · ${data.summary.posts} posts across ${data.summary.collections} collection(s).` });
+    } catch (error) {
+      setStatus({ tone: "warn", text: error.message });
+    }
+  }, []);
+
+  const onBookmarkletClick = useCallback((event) => {
+    event.preventDefault();
+    setStatus({ tone: "info", text: "Drag the button to your bookmarks bar instead of clicking. Then visit Instagram and click the bookmark." });
+  }, []);
+
+  const triggerRediscover = useCallback(() => {
+    if (!cards.length) {
+      setStatus({ tone: "warn", text: "No archive yet — sync something first." });
+      return;
+    }
+    const candidates = cards.filter((c) => !viewedRef.current.has(c.id));
+    const pool = candidates.length ? candidates : cards;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    viewedRef.current.add(pick.id);
+    try {
+      localStorage.setItem(VIEWED_KEY, JSON.stringify(Array.from(viewedRef.current).slice(-200)));
+    } catch {}
+    setRediscoverPost(pick);
+    setShowRediscover(true);
+  }, [cards]);
+
+  const promptInstall = useCallback(async () => {
+    if (!installEvent) return;
+    installEvent.prompt();
+    const choice = await installEvent.userChoice;
+    setInstallEvent(null);
+    if (choice.outcome === "accepted") {
+      setStatus({ tone: "info", text: "Installed. Look for the Insta-ntiate icon on your home screen." });
+    }
+  }, [installEvent]);
+
+  const scrollTo = useCallback((id) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  function applyArchiveTransition(next, setter) {
+    if (typeof document !== "undefined" && document.startViewTransition) {
+      document.startViewTransition(() => setter(next));
+    } else {
+      setter(next);
+    }
+  }
 
   return (
-    <div className={styles.page}>
-      <header className={styles.hero}>
-        <nav className={styles.topbar}>
-          <div className={styles.brand}>
-            <span className={styles.brandMark}>IN</span>
-            <div>
-              <p className={styles.eyebrow}>Saved Search Layer</p>
-              <h1>Insta-ntiate</h1>
-            </div>
+    <div className={styles.shell}>
+      <header className={styles.topbar}>
+        <div className={styles.brand}>
+          <div className={styles.brandMark}>
+            <span className={styles.brandMarkLetter}>IN</span>
           </div>
-          <div className={styles.heroActions}>
-            <a className={styles.button} href="/downloads/insta-ntiate-extension.zip">
-              Download Extension ZIP
-            </a>
-            <a
-              className={styles.buttonSecondary}
-              href="/downloads/insta-ntiate-extension-unpacked/manifest.json"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open Unpacked Manifest
-            </a>
+          <div className={styles.brandText}>
+            <span className={styles.brandName}>Insta-ntiate</span>
+            <span className={styles.brandTag}>Saved, searchable.</span>
           </div>
+        </div>
+        <nav className={styles.nav} aria-label="Primary">
+          <button type="button" className={`${styles.navLink} ${styles.navLinkActive}`}>Dashboard</button>
+          <button type="button" className={styles.navLink} onClick={() => scrollTo("setup")}>Setup</button>
+          <button type="button" className={styles.navLink} onClick={() => scrollTo("advanced")}>Advanced</button>
         </nav>
-
-        <section className={styles.heroGrid}>
-          <div className={styles.heroCopy}>
-            <p className={styles.kicker}>Instagram saves, indexed from your own browser session.</p>
-            <h2 className={styles.heroTitle}>
-              Search saved reels and posts,
-              <span> without the manual export loop.</span>
-            </h2>
-            <p className={styles.lead}>
-              The extension now pushes its latest archive into the local app store, and this dashboard
-              polls for updates so new syncs show up here automatically while you are developing on localhost.
-            </p>
-            <div className={styles.heroActions}>
-              <label className={styles.buttonSecondary}>
-                Import JSON Fallback
-                <input hidden type="file" accept=".json,application/json" onChange={importArchive} />
-              </label>
-              <button className={styles.buttonGhost} type="button" onClick={loadDemo}>
-                Load Demo Data
+        <div className={styles.topbarCta}>
+          {installEvent ? (
+            <button type="button" className={styles.installPrompt} onClick={promptInstall}>
+              📱 Install
+            </button>
+          ) : null}
+          <div className={styles.themeMenu} role="group" aria-label="Theme">
+            {[{ id: "dark", label: "🌙" }, { id: "light", label: "☀" }].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`${styles.themeOption} ${theme === opt.id ? styles.themeOptionActive : ""}`}
+                onClick={() => applyTheme(opt.id)}
+                aria-label={`Use ${opt.id} theme`}
+              >
+                {opt.label}
               </button>
-            </div>
-            <p className={styles.subtle}>
-              Direct sync targets `http://localhost:3000/api/archive` by default. JSON import remains as a fallback.
-            </p>
+            ))}
           </div>
-
-          <aside className={styles.heroCard}>
-            <p className={styles.eyebrow}>Current V1 collector</p>
-            <div className={styles.metricRow}>
-              <div>
-                <span className={styles.metricNumber}>2</span>
-                <span className={styles.metricLabel}>Collections scraped</span>
-              </div>
-              <div>
-                <span className={styles.metricNumber}>5</span>
-                <span className={styles.metricLabel}>Posts per collection</span>
-              </div>
-            </div>
-            <ul className={styles.featureList}>
-              <li>Runs from your logged-in Chrome Instagram session</li>
-              <li>Opens each saved post in a background tab to capture metadata</li>
-              <li>Pushes the archive into the app so search updates automatically</li>
-            </ul>
-          </aside>
-        </section>
+          <button type="button" className={styles.iconBtn} onClick={() => setShowShortcuts(true)} aria-label="Keyboard shortcuts">
+            ?
+          </button>
+        </div>
       </header>
 
-      <main>
-        <section className={styles.panel}>
+      <section className={styles.hero}>
+        <div className={styles.heroGlow} />
+        <div className={styles.heroGlow2} />
+        <div className={styles.heroInner}>
           <div>
-            <p className={styles.sectionTag}>Workflow</p>
-            <h3>How this version works</h3>
-          </div>
-          <div className={styles.workflow}>
-            <article className={styles.workflowCard}>
-              <span className={styles.workflowIndex}>01</span>
-              <h4>Load extension</h4>
-              <p>Use the unpacked folder in Chrome developer mode, then keep localhost running.</p>
-            </article>
-            <article className={styles.workflowCard}>
-              <span className={styles.workflowIndex}>02</span>
-              <h4>Sync Instagram</h4>
-              <p>The extension visits your saved collections, then opens each saved item for deeper metadata extraction.</p>
-            </article>
-            <article className={styles.workflowCard}>
-              <span className={styles.workflowIndex}>03</span>
-              <h4>Search immediately</h4>
-              <p>The dashboard keeps polling the local archive endpoint so you do not have to re-import every time.</p>
-            </article>
-          </div>
-        </section>
-
-        <section className={styles.panel}>
-          <div className={styles.toolbar}>
-            <div>
-              <p className={styles.sectionTag}>Archive</p>
-              <h3>Your saved posts</h3>
-            </div>
-            <div className={styles.toolbarActions}>
-              <input
-                className={styles.searchInput}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search captions, creators, collections..."
-                type="search"
-              />
-              <button className={styles.buttonGhost} type="button" onClick={clearArchive}>
-                Clear Archive
+            <span className={styles.heroEyebrow}>
+              <span className={styles.heroEyebrowDot} />
+              Zero-install · synced {relativeSync}
+            </span>
+            <h1 className={styles.heroTitle}>
+              Find that one reel you <em>saved three months ago.</em>
+            </h1>
+            <p className={styles.heroLead}>
+              Drag the button below to your bookmarks bar. Open Instagram, hit the bookmark,
+              pick what to save. Or share reels from your phone, or drop your Instagram data
+              export here. No extension required.
+            </p>
+            <div className={styles.heroActions}>
+              <a
+                className={`${styles.bookmarklet} ${bookmarkletWiggling ? styles.bookmarkletWiggle : ""}`}
+                href={bookmarkletHref}
+                draggable="true"
+                onClick={onBookmarkletClick}
+                title="Drag this to your bookmarks bar"
+              >
+                Drag to bookmarks
+                <span className={styles.bookmarkletHint}>Drag me up to your bookmarks bar</span>
+              </a>
+              <label className={`${styles.btn} ${styles.btnGhost}`}>
+                Upload IG export
+                <input hidden type="file" accept=".zip,.json" onChange={importJsonInline} />
+              </label>
+              <button type="button" className={`${styles.btn} ${styles.btnText}`} onClick={loadDemo}>
+                Try demo →
               </button>
             </div>
           </div>
-
-          <div className={styles.storageNote}>
-            <p>
-              {status || "The app reads the latest archive from its local API store. If the extension is running, new syncs will show up here automatically."}
-            </p>
-          </div>
-
-          <div className={styles.summaryGrid}>
-            <article className={styles.summaryCard}>
-              <span className={styles.summaryLabel}>Collections</span>
-              <strong>{collectionCount}</strong>
-            </article>
-            <article className={styles.summaryCard}>
-              <span className={styles.summaryLabel}>Posts</span>
-              <strong>{postCount}</strong>
-            </article>
-            <article className={styles.summaryCard}>
-              <span className={styles.summaryLabel}>Videos Found</span>
-              <strong>{videoCount}</strong>
-            </article>
-            <article className={styles.summaryCard}>
-              <span className={styles.summaryLabel}>Last Sync</span>
-              <strong>{syncStamp ? formatDate(syncStamp) : "Waiting for sync"}</strong>
-            </article>
-          </div>
-
-          {!archive || filteredCards.length === 0 ? (
-            <div className={styles.emptyState}>
-              <h4>{archive ? "No matching posts" : "No archive synced yet"}</h4>
-              <p>
-                {archive
-                  ? "Try another search term, or let the extension run another sync."
-                  : "Run a sync from the extension. This page will update once the local archive endpoint receives data."}
-              </p>
+          <aside className={styles.heroSide}>
+            <span className={`${styles.healthPill} ${healthClass(health, styles)}`}>
+              <span className={styles.healthDot} />
+              {health.label}
+            </span>
+            <div className={styles.heroSideRow}>
+              <span>Account</span>
+              <span>{archive?.sourceAccount?.username ? `@${archive.sourceAccount.username.replace(/^@/, "")}` : "—"}</span>
             </div>
-          ) : (
-            <div className={styles.resultsGrid}>
-              {filteredCards.map((card) => (
-                <article className={styles.resultCard} key={card.id}>
-                  <div className={styles.cardImage}>
-                    {card.thumbnailUrl ? <img src={card.thumbnailUrl} alt={card.caption || "Saved post thumbnail"} /> : null}
-                  </div>
-                  <div className={styles.cardBody}>
-                    <div className={styles.chipRow}>
-                      {(card.collections || []).map((collection) => (
-                        <span className={styles.chip} key={`${card.id}-${collection}`}>
-                          {collection}
-                        </span>
-                      ))}
+            <div className={styles.heroSideRow}>
+              <span>Last sync</span>
+              <span>{relativeSync}</span>
+            </div>
+            <div className={styles.heroSideRow}>
+              <span>Endpoint</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.74rem" }}>{appOrigin}</span>
+            </div>
+            <div className={styles.heroSideRow}>
+              <span>Scope</span>
+              <span>user-picked</span>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section className={styles.stats}>
+        <article className={styles.statCard}>
+          <span className={styles.statLabel}>Posts</span>
+          <strong className={styles.statValue}>{postCount}</strong>
+          <span className={styles.statHint}>across all sources</span>
+        </article>
+        <article className={styles.statCard}>
+          <span className={styles.statLabel}>Collections</span>
+          <strong className={styles.statValue}>{collectionCount}</strong>
+          <span className={styles.statHint}>captured so far</span>
+        </article>
+        <article className={styles.statCard}>
+          <span className={styles.statLabel}>Reels & videos</span>
+          <strong className={styles.statValue}>{videoCount}</strong>
+          <span className={styles.statHint}>with captured media</span>
+        </article>
+        <article className={styles.statCard}>
+          <span className={styles.statLabel}>Filtered</span>
+          <strong className={styles.statValue}>{filteredCards.length}</strong>
+          <span className={styles.statHint}>matching current search</span>
+        </article>
+      </section>
+
+      <section className={styles.toolbar} aria-label="Search and filters">
+        <div className={styles.searchWrap}>
+          <span className={styles.searchIcon} aria-hidden><SearchGlyph /></span>
+          <input
+            ref={searchRef}
+            className={styles.searchInput}
+            type="search"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setSpotlightOpen(true); }}
+            onFocus={() => setSpotlightOpen(true)}
+            onBlur={() => window.setTimeout(() => setSpotlightOpen(false), 120)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") { e.preventDefault(); setSpotlightIndex((i) => Math.min(spotlightResults.length - 1, i + 1)); }
+              else if (e.key === "ArrowUp") { e.preventDefault(); setSpotlightIndex((i) => Math.max(0, i - 1)); }
+              else if (e.key === "Enter" && spotlightResults[spotlightIndex]) {
+                e.preventDefault();
+                setActivePost(spotlightResults[spotlightIndex]);
+                setSpotlightOpen(false);
+              }
+            }}
+            placeholder="Search captions, creators, collections…"
+            aria-label="Search saved posts"
+          />
+          <kbd className={styles.searchKbd}>⌘K</kbd>
+          {spotlightOpen && query.trim() ? (
+            <div className={styles.spotlight}>
+              {spotlightResults.length === 0 ? (
+                <div className={styles.spotlightEmpty}>No matches for "{query}".</div>
+              ) : (
+                spotlightResults.map((card, idx) => (
+                  <div
+                    key={card.id}
+                    className={`${styles.spotlightRow} ${idx === spotlightIndex ? styles.spotlightRowActive : ""}`}
+                    onMouseEnter={() => setSpotlightIndex(idx)}
+                    onMouseDown={(e) => { e.preventDefault(); setActivePost(card); setSpotlightOpen(false); }}
+                  >
+                    {card.thumbnailUrl ? (
+                      <img className={styles.spotlightThumb} src={card.thumbnailUrl} alt="" />
+                    ) : (
+                      <div className={styles.spotlightThumb} />
+                    )}
+                    <div className={styles.spotlightMeta}>
+                      <span className={styles.spotlightCreator}>{card.creatorHandle || "Unknown creator"}</span>
+                      <span className={styles.spotlightCaption}>{card.caption || "No caption"}</span>
                     </div>
-                    <h4>{card.creatorHandle || "Unknown creator"}</h4>
-                    <p className={styles.resultMeta}>{card.caption || "No visible caption captured."}</p>
-                    <div className={styles.linkRow}>
-                      <a className={styles.smallLink} href={card.canonicalUrl} target="_blank" rel="noreferrer">
-                        Open Post
-                      </a>
-                      {card.videoUrl ? (
-                        <a className={styles.smallLink} href={card.videoUrl} target="_blank" rel="noreferrer">
-                          Open Video URL
-                        </a>
-                      ) : null}
-                    </div>
+                    <span className={styles.spotlightKind}>{(card.mediaType === "video" || card.videoUrl) ? "REEL" : "POST"}</span>
                   </div>
-                </article>
+                ))
+              )}
+            </div>
+          ) : null}
+        </div>
+        <div className={styles.filterRow}>
+          {[
+            { id: "all", label: "All" },
+            { id: "image", label: "Posts" },
+            { id: "video", label: "Reels" }
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              className={`${styles.chip} ${mediaFilter === opt.id ? styles.chipActive : ""}`}
+              onClick={() => setFilterWithTransition(() => setMediaFilter(opt.id))}
+            >
+              {opt.label}
+            </button>
+          ))}
+          {collectionFacets.slice(0, 6).map(({ collection, count }) => (
+            <button
+              key={collection.id}
+              type="button"
+              className={`${styles.chip} ${selectedCollections.has(collection.id) ? styles.chipActive : ""}`}
+              onClick={() => setFilterWithTransition(() => toggleCollection(collection.id))}
+            >
+              {collection.title || "Untitled"}
+              <span className={styles.chipCount}>{count}</span>
+            </button>
+          ))}
+          <div className={styles.toolbarSpacer} />
+          {cards.length > 0 ? (
+            <button type="button" className={`${styles.chip}`} onClick={triggerRediscover} title="Surface a random post you haven't seen recently">
+              ✨ Rediscover
+            </button>
+          ) : null}
+          {archive ? (
+            <button type="button" className={`${styles.btn} ${styles.btnText}`} onClick={clearArchive}>Clear</button>
+          ) : null}
+        </div>
+      </section>
+
+      {status ? (
+        <div className={`${styles.banner} ${status.tone === "info" ? styles.bannerInfo : status.tone === "bad" ? styles.bannerBad : ""}`} role="status">
+          {status.text}
+        </div>
+      ) : null}
+
+      {!archive ? (
+        <section
+          className={`${styles.empty} ${dropActive ? styles.dropZoneActive : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
+          onDragLeave={() => setDropActive(false)}
+          onDrop={onDrop}
+        >
+          <h2 className={styles.emptyTitle}>No archive yet — three ways in</h2>
+          <p className={styles.emptySub}>
+            Drop your Instagram data export anywhere on this page, or use one of the
+            zero-install paths below. The dashboard updates live as data arrives.
+          </p>
+          <div className={styles.emptyCards}>
+            <a
+              className={styles.emptyCard}
+              href={bookmarkletHref}
+              draggable="true"
+              onClick={onBookmarkletClick}
+              title="Drag me to your bookmarks bar"
+            >
+              <span className={styles.emptyCardIndex}>1</span>
+              <span className={styles.emptyCardTitle}>Drag the bookmarklet</span>
+              <span className={styles.emptyCardCopy}>
+                Drag this card up to your bookmarks bar. Visit Instagram saved pages,
+                click the bookmark, pick what to save. Works in any Chromium browser.
+              </span>
+            </a>
+            <label className={styles.emptyCard}>
+              <span className={styles.emptyCardIndex}>2</span>
+              <span className={styles.emptyCardTitle}>Drop your IG data export</span>
+              <span className={styles.emptyCardCopy}>
+                Already requested your Instagram data? Drop the ZIP (or the saved_posts.json
+                inside) here and we'll parse your entire history in one shot.
+              </span>
+              <input hidden type="file" accept=".zip,.json" onChange={importJsonInline} />
+            </label>
+            <div
+              className={styles.emptyCard}
+              role="button"
+              tabIndex={0}
+              onClick={loadDemo}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); loadDemo(); } }}
+            >
+              <span className={styles.emptyCardIndex}>3</span>
+              <span className={styles.emptyCardTitle}>Try the demo</span>
+              <span className={styles.emptyCardCopy}>
+                Load a small fake archive into the local store so you can feel out search,
+                filters, lightbox, rediscover, and the keyboard shortcuts.
+              </span>
+            </div>
+          </div>
+        </section>
+      ) : filteredCards.length === 0 ? (
+        <section className={styles.empty}>
+          <h2 className={styles.emptyTitle}>No matches</h2>
+          <p className={styles.emptySub}>
+            Nothing in your archive matches this combination. Try clearing chips, broaden the
+            query, or capture more posts via the bookmarklet.
+          </p>
+        </section>
+      ) : (
+        <div className={styles.gridWrap}>
+          <div className={styles.grid}>
+            {filteredCards.map((card) => (
+              <Card key={card.id} card={card} onOpen={() => { viewedRef.current.add(card.id); setActivePost(card); }} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <section id="setup" className={styles.setup}>
+        <div className={styles.setupHeader}>
+          <div>
+            <p>Setup</p>
+            <h2>Three zero-install paths.</h2>
+          </div>
+          <a className={`${styles.btn} ${styles.btnGhost}`} href="https://www.instagram.com/download/request/" target="_blank" rel="noreferrer">
+            Request my IG data →
+          </a>
+        </div>
+        <div className={styles.steps}>
+          <article className={styles.step}>
+            <span className={styles.stepIndex}>desktop</span>
+            <h3 className={styles.stepTitle}>Bookmarklet (one drag)</h3>
+            <p className={styles.stepCopy}>
+              Drag the pink button up there to your bookmarks bar. Visit your Instagram saved
+              page, click the bookmark, a floating panel asks which collections to save. Each
+              click merges into your archive.
+            </p>
+            <div className={styles.stepNote}>POSTs to <code>{appOrigin}/api/archive</code></div>
+          </article>
+          <article className={styles.step}>
+            <span className={styles.stepIndex}>mobile</span>
+            <h3 className={styles.stepTitle}>Add to Home Screen + share sheet</h3>
+            <p className={styles.stepCopy}>
+              Open this page on your phone, tap "Add to Home Screen". When you share a reel
+              from Instagram, Insta-ntiate appears in the share sheet — one tap saves it.
+              Needs HTTPS in production, works on localhost during dev.
+            </p>
+            <div className={styles.stepNote}>Receives at <code>POST /api/share</code></div>
+          </article>
+          <article className={styles.step}>
+            <span className={styles.stepIndex}>history</span>
+            <h3 className={styles.stepTitle}>Instagram data export</h3>
+            <p className={styles.stepCopy}>
+              The cleanest backfill. Request your data from Instagram → wait for the email →
+              drop the ZIP into this page. Captures everything you've ever saved, no scraping
+              fragility, no caps.
+            </p>
+            <div className={styles.stepNote}>Parsed at <code>POST /api/import</code></div>
+          </article>
+        </div>
+      </section>
+
+      <details id="advanced" className={styles.disclosure}>
+        <summary className={styles.disclosureSummary}>
+          <div>
+            <h3>Advanced — scheduled background sync (extension)</h3>
+            <p>For users who want set-and-forget mirroring. Power-user opt-in, not the default.</p>
+          </div>
+          <span className={styles.disclosureChevron}>⌄</span>
+        </summary>
+        <div className={styles.disclosureBody}>
+          <p>
+            The Chrome extension lets you schedule periodic background syncs. It opens your IG
+            saved page in non-focused tabs at a configurable interval, scrapes the collections
+            you've selected, and POSTs to <code>{appOrigin}/api/archive</code>. You auto-detect
+            your IG username from the active session and pick exactly which collections to
+            include in the extension's settings page.
+          </p>
+          <h4>Install (developer mode, until we publish to the Chrome Web Store)</h4>
+          <ol>
+            <li>Download: <a href="/downloads/insta-ntiate-extension.zip">insta-ntiate-extension.zip</a></li>
+            <li>Unzip locally.</li>
+            <li>Open <code>chrome://extensions</code>, enable "Developer mode", click "Load unpacked", pick the folder.</li>
+            <li>The extension opens its settings page on first install. Pick which collections to sync, set the interval, save.</li>
+          </ol>
+          <p>
+            <strong>Heads up:</strong> this path has more friction than the bookmarklet. It's
+            here for people who genuinely want scheduled syncs while their browser is open.
+            We'll publish to the Chrome Web Store later for 1-click install.
+          </p>
+        </div>
+      </details>
+
+      <footer className={styles.footer}>
+        <span>Insta-ntiate · prototype build · {appOrigin}</span>
+        <span>v0.3 · {new Date(now).getFullYear()}</span>
+      </footer>
+
+      {activePost ? (
+        <Lightbox post={activePost} now={now} onClose={() => setActivePost(null)} />
+      ) : null}
+
+      {showRediscover && rediscoverPost ? (
+        <div className={styles.modalBackdrop} onClick={() => setShowRediscover(false)}>
+          <div className={styles.lightbox} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Rediscover">
+            <button type="button" className={styles.lightboxClose} onClick={() => setShowRediscover(false)} aria-label="Close">✕</button>
+            <div className={styles.lightboxMedia}>
+              {rediscoverPost.thumbnailUrl ? (
+                <img src={rediscoverPost.thumbnailUrl} alt={rediscoverPost.caption || "Saved post"} />
+              ) : (
+                <div className={styles.cardMediaPlaceholder}>No media captured</div>
+              )}
+            </div>
+            <div className={styles.lightboxBody}>
+              <span className={styles.lightboxMeta}>REDISCOVER · {rediscoverPost.shortcode}</span>
+              <div className={styles.lightboxCreator}>{rediscoverPost.creatorHandle || "Unknown creator"}</div>
+              {rediscoverPost.caption ? (
+                <p className={styles.lightboxCaption}>{rediscoverPost.caption}</p>
+              ) : (
+                <p className={styles.lightboxCaption} style={{ color: "var(--ink-faint)" }}>No caption captured for this post.</p>
+              )}
+              <div className={styles.lightboxLinks}>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={triggerRediscover}>Another one ✨</button>
+                {rediscoverPost.canonicalUrl ? (
+                  <a className={`${styles.btn} ${styles.btnGhost}`} href={rediscoverPost.canonicalUrl} target="_blank" rel="noreferrer">Open on Instagram ↗</a>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showShortcuts ? (
+        <div className={styles.modalBackdrop} onClick={() => setShowShortcuts(false)}>
+          <div className={styles.shortcutsModal} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Keyboard shortcuts">
+            <div className={styles.shortcutsTitle}>Keyboard shortcuts</div>
+            <div className={styles.shortcutList}>
+              {[
+                { label: "Focus search / open spotlight", keys: ["⌘", "K"] },
+                { label: "Navigate spotlight results", keys: ["↑", "↓"] },
+                { label: "Open highlighted post", keys: ["Enter"] },
+                { label: "Show this panel", keys: ["?"] },
+                { label: "Close any modal / clear search", keys: ["Esc"] },
+                { label: "Surface a random saved post", keys: ["Rediscover"] }
+              ].map((s) => (
+                <div key={s.label} className={styles.shortcutItem}>
+                  <span>{s.label}</span>
+                  <span className={styles.shortcutKeys}>
+                    {s.keys.map((k) => <span key={k} className={styles.shortcutKey}>{k}</span>)}
+                  </span>
+                </div>
               ))}
             </div>
-          )}
-        </section>
-      </main>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function formatDate(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown";
-  }
+function Card({ card, onOpen }) {
+  const isVideo = card.mediaType === "video" || Boolean(card.videoUrl);
+  return (
+    <article
+      className={styles.card}
+      onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open details for post by ${card.creatorHandle || "unknown creator"}`}
+    >
+      <div className={styles.cardMedia}>
+        {card.thumbnailUrl ? (
+          <img src={card.thumbnailUrl} alt={card.caption ? card.caption.slice(0, 80) : "Saved post"} loading="lazy" />
+        ) : (
+          <div className={styles.cardMediaPlaceholder}>{card.canonicalUrl ? "Open to fetch thumbnail" : "No thumbnail captured"}</div>
+        )}
+        <span className={`${styles.cardBadge} ${isVideo ? styles.cardBadgeVideo : ""}`}>{isVideo ? "Reel" : "Post"}</span>
+      </div>
+      <div className={styles.cardBody}>
+        <div className={styles.cardCreator}>{card.creatorHandle || "Unknown creator"}</div>
+        {card.caption ? <p className={styles.cardCaption}>{card.caption}</p> : null}
+        {card.collections.length ? (
+          <div className={styles.cardCollections}>
+            {card.collections.map((c) => (
+              <span key={c.id} className={styles.cardCollection}>{c.title || "Untitled"}</span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
+}
 
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(date);
+function Lightbox({ post, now, onClose }) {
+  const isVideo = post.mediaType === "video" || Boolean(post.videoUrl);
+  const captured = post.capturedAt ? relativeTime(post.capturedAt, now) : null;
+  return (
+    <div className={styles.modalBackdrop} onClick={onClose} role="presentation">
+      <div className={styles.lightbox} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Saved post details">
+        <button type="button" className={styles.lightboxClose} onClick={onClose} aria-label="Close">✕</button>
+        <div className={styles.lightboxMedia}>
+          {post.thumbnailUrl ? (
+            <img src={post.thumbnailUrl} alt={post.caption || "Saved post"} />
+          ) : (
+            <div className={styles.cardMediaPlaceholder}>No media captured</div>
+          )}
+        </div>
+        <div className={styles.lightboxBody}>
+          <span className={styles.lightboxMeta}>
+            {isVideo ? "REEL" : "POST"} · {post.shortcode || "—"}{captured ? ` · captured ${captured}` : ""}
+          </span>
+          <div className={styles.lightboxCreator}>{post.creatorHandle || "Unknown creator"}</div>
+          {post.caption ? (
+            <p className={styles.lightboxCaption}>{post.caption}</p>
+          ) : (
+            <p className={styles.lightboxCaption} style={{ color: "var(--ink-faint)" }}>No caption was captured for this post.</p>
+          )}
+          {post.collections?.length ? (
+            <div className={styles.lightboxRow}>
+              <span className={styles.lightboxLabel}>Lives in</span>
+              <div className={styles.cardCollections}>
+                {post.collections.map((c) => (
+                  <span key={c.id} className={styles.cardCollection}>{c.title || "Untitled"}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className={styles.lightboxRow}>
+            <span className={styles.lightboxLabel}>Links</span>
+            <div className={styles.lightboxLinks}>
+              {post.canonicalUrl ? (
+                <a className={`${styles.btn} ${styles.btnGhost}`} href={post.canonicalUrl} target="_blank" rel="noreferrer">Open on Instagram ↗</a>
+              ) : null}
+              {post.videoUrl ? (
+                <a className={`${styles.btn} ${styles.btnGhost}`} href={post.videoUrl} target="_blank" rel="noreferrer">Direct video ↗</a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SearchGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function computeHealth(status, lastSyncedAt, now) {
+  if (status === "running") return { id: "running", label: "Sync running…" };
+  if (status === "failed") return { id: "bad", label: "Last sync failed" };
+  if (!lastSyncedAt) return { id: "idle", label: "Idle · waiting for first sync" };
+  const t = new Date(lastSyncedAt).getTime();
+  if (Number.isNaN(t)) return { id: "idle", label: "Unknown sync state" };
+  const ageMs = now - t;
+  const hour = 60 * 60 * 1000;
+  if (ageMs < hour) return { id: "fresh", label: "Fresh · synced this hour" };
+  if (ageMs < 24 * hour) return { id: "stale", label: "Synced today" };
+  return { id: "stale", label: "Stale · sync soon" };
+}
+
+function healthClass(health, styles) {
+  if (health.id === "fresh") return styles.healthFresh;
+  if (health.id === "stale") return styles.healthStale;
+  if (health.id === "bad") return styles.healthBad;
+  if (health.id === "running") return styles.healthRunning;
+  return styles.healthIdle;
+}
+
+function relativeTime(value, now) {
+  const t = new Date(value).getTime();
+  if (Number.isNaN(t)) return "unknown";
+  const diff = Math.max(0, now - t);
+  const sec = Math.round(diff / 1000);
+  if (sec < 45) return "just now";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr} hr ago`;
+  const day = Math.round(hr / 24);
+  if (day < 7) return `${day} day${day === 1 ? "" : "s"} ago`;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(t));
+}
+
+function isTypingTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
