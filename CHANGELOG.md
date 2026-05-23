@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-05-24
+
+### Added
+- Expanded the archive model from Instagram-only items to multi-social items with platform-aware metadata.
+- Added support for seven platform sectors:
+  - Instagram
+  - WhatsApp
+  - Slack
+  - Discord
+  - Telegram
+  - LinkedIn
+  - Reddit
+- Added multi-source import parsing for WhatsApp TXT, Slack ZIP/JSON, and archive JSON.
+- Added a dedicated `/collectors` page for detailed setup and collector guidance.
+- Added parser verification via `npm run test:imports`.
+
+### Changed
+- Reworked the extension from Instagram-only background sync into manual-first, platform-selectable sync.
+- Moved auto sync behind an explicit checkbox instead of making it the default path.
+- Simplified the homepage into a quieter search-first dashboard.
+- Expanded the extension content script and manifest to support multiple social web apps.
+
+### Verified
+- `npm run test:imports`
+- `npm run build`
+
 ## 2026-05-22
 
 ### Added

@@ -1,15 +1,19 @@
 const statusText = document.getElementById("statusText");
 const statusDetail = document.getElementById("statusDetail");
+const selectedPlatforms = document.getElementById("selectedPlatforms");
 
 document.getElementById("syncBtn").addEventListener("click", async () => {
-  setStatus("Running", "Opening Instagram in background tabs.");
+  setStatus("Syncing", "Collecting from the socials you selected in settings.");
   const response = await chrome.runtime.sendMessage({ type: "RUN_SYNC", trigger: "popup" });
   if (!response?.ok) {
-    setStatus("Failed", response?.error || "Sync failed.");
+    setStatus("Failed", response?.error || "Manual sync failed.");
     return;
   }
-  const a = response.result;
-  setStatus("Synced", `Captured ${a.summary.postsCaptured} posts across ${a.summary.collectionsCaptured} collection(s).`);
+
+  const archive = response.result;
+  const platformsCaptured = (archive.summary.platformsCaptured || []).length;
+  setStatus("Synced", `${archive.summary.postsCaptured} item(s) from ${platformsCaptured} platform(s).`);
+  hydrate();
 });
 
 document.getElementById("optionsBtn").addEventListener("click", () => {
@@ -19,36 +23,42 @@ document.getElementById("optionsBtn").addEventListener("click", () => {
 document.getElementById("exportBtn").addEventListener("click", async () => {
   const response = await chrome.runtime.sendMessage({ type: "GET_STATE" });
   if (!response?.ok || !response.archive) {
-    setStatus("No archive", "Sync first, then export.");
+    setStatus("No archive", "Run a manual sync before exporting.");
     return;
   }
-  const json = JSON.stringify(response.archive, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
+
+  const blob = new Blob([JSON.stringify(response.archive, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "insta-ntiate-archive.json";
-  a.click();
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "insta-ntiate-archive.json";
+  link.click();
   URL.revokeObjectURL(url);
   setStatus("Exported", "Archive JSON downloaded.");
 });
 
-hydrate();
-
 async function hydrate() {
   const response = await chrome.runtime.sendMessage({ type: "GET_STATE" });
-  if (!response?.ok) return;
-  const run = response.syncRun;
-  if (!run) {
-    setStatus("Idle", "No sync yet.");
+  if (!response?.ok) {
     return;
   }
-  const at = run.completedAt ? new Date(run.completedAt).toLocaleTimeString() : "—";
-  if (run.status === "failed") {
-    setStatus("Failed", run.errors?.[0] || "Last run failed.");
-  } else {
-    setStatus(capitalize(run.status), `Last run ${at} · ${response.archive?.summary?.postsCaptured || 0} posts.`);
+
+  const settings = response.settings || {};
+  selectedPlatforms.textContent = (settings.selectedPlatforms || []).join(", ") || "none";
+
+  const run = response.syncRun;
+  if (!run) {
+    setStatus("Idle", "Manual sync is ready. Auto sync is optional.");
+    return;
   }
+
+  if (run.status === "failed") {
+    setStatus("Failed", run.errors?.[0] || "Last sync failed.");
+    return;
+  }
+
+  const captured = response.archive?.summary?.postsCaptured || 0;
+  setStatus(capitalize(run.status), `Last run captured ${captured} item(s).`);
 }
 
 function setStatus(title, detail) {
@@ -59,3 +69,5 @@ function setStatus(title, detail) {
 function capitalize(value) {
   return value ? `${value[0].toUpperCase()}${value.slice(1)}` : "Unknown";
 }
+
+hydrate();

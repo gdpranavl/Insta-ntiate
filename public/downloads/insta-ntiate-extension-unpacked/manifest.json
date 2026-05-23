@@ -1,15 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Insta-ntiate Collector",
-  "version": "0.2.0",
-  "description": "Periodically back up your Instagram saved collections into your own searchable archive.",
+  "version": "0.4.0",
+  "description": "Manually capture selected parts of your digital world into one searchable archive.",
   "permissions": ["storage", "tabs", "alarms", "scripting"],
   "host_permissions": [
     "https://www.instagram.com/*",
+    "https://web.whatsapp.com/*",
+    "https://app.slack.com/*",
+    "https://discord.com/*",
+    "https://discordapp.com/*",
+    "https://web.telegram.org/*",
+    "https://www.linkedin.com/*",
+    "https://www.reddit.com/*",
     "http://localhost/*",
     "https://localhost/*"
   ],
-  "optional_host_permissions": ["<all_urls>"],
   "action": {
     "default_title": "Insta-ntiate",
     "default_popup": "popup.html"
@@ -24,7 +30,16 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.instagram.com/*"],
+      "matches": [
+        "https://www.instagram.com/*",
+        "https://web.whatsapp.com/*",
+        "https://app.slack.com/*",
+        "https://discord.com/*",
+        "https://discordapp.com/*",
+        "https://web.telegram.org/*",
+        "https://www.linkedin.com/*",
+        "https://www.reddit.com/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

@@ -7,6 +7,50 @@ If you make changes on behalf of someone new, add a new top-level section. If yo
 ---
 
 ## harshita
+### 2026-05-24 - Multi-social expansion + search-first dashboard
+
+#### Direction
+
+Pranav asked for the Instagram extraction model to be extended to a broader digital-world archive:
+- support seven socials right now
+- make the homepage cleaner and search-first
+- move verbose setup into a separate page
+- make the extension manual-first with per-social checkboxes
+- keep auto sync behind an explicit opt-in
+
+#### What shipped
+
+- Added a shared platform model in `lib/platforms.js` for Instagram, WhatsApp, Slack, Discord, Telegram, LinkedIn, and Reddit.
+- Added `lib/social-import.js` for multi-source imports:
+  - WhatsApp exported chat `.txt`
+  - Slack export `.zip`
+  - Slack export `.json`
+  - archive JSON
+  - existing Instagram export path remains supported
+- Expanded archive normalization in `app/api/archive/route.js` and `lib/archive-store.js` to carry:
+  - `platform`
+  - `entityType`
+  - `textContent`
+  - `authorName`
+- Reworked the extension:
+  - `extension/background.js` now runs manual sync across selected socials
+  - auto sync is opt-in only
+  - open/logged-in tabs are the current scrape surface
+- Reworked `extension/content.js` with lightweight collectors for all seven supported platforms.
+- Reworked popup/settings UX around:
+  - manual sync first
+  - platform checkboxes
+  - auto-sync toggle
+- Reworked the web app:
+  - `components/dashboard.js` is now search-first and platform-first
+  - main page is intentionally quieter
+  - `/collectors` holds setup/detail
+- Added verification script `scripts/verify-social-imports.mjs` and `npm run test:imports`.
+
+#### Verification
+
+- `npm run test:imports`
+- `npm run build`
 
 ### 2026-05-23 — Project audit + frontend rebuild
 
@@ -233,3 +277,4 @@ Visual / interaction verification in a real browser was *not* performed in this 
 - Cross-device sync (requires hosting + auth).
 - Cloud-hosted media cache so thumbnails don't 404 when Instagram CDN URLs expire.
 - Auto-tagging by content type (recipes / travel / design) via keyword matching, then later via embeddings.
+

@@ -1,126 +1,117 @@
 const $ = (id) => document.getElementById(id);
 
 let cachedSettings = null;
-let discoveredCollections = [];
+let platforms = [];
 
 async function bootstrap() {
   const response = await chrome.runtime.sendMessage({ type: "GET_STATE" });
   if (!response?.ok) {
-    setStatus("footerStatus", "Could not load settings.", "err");
+    setStatus("footerStatus", "Could not load collector settings.", "err");
     return;
   }
+
   cachedSettings = response.settings;
-  discoveredCollections = response.discovered?.collections || [];
+  platforms = response.platforms || [];
   hydrateForm();
-  renderCollections();
+  renderPlatforms();
+  renderLastRun(response.syncRun, response.archive);
 }
 
 function hydrateForm() {
   $("endpoint").value = cachedSettings.appEndpoint || "";
-  $("username").value = cachedSettings.username || "";
-  $("autoDetect").checked = cachedSettings.autoDetectUsername !== false;
-  $("perCollection").value = cachedSettings.perCollectionLimit || 0;
-  $("totalCap").value = cachedSettings.totalPostLimit || 0;
+  $("enableAutoSync").checked = Boolean(cachedSettings.enableAutoSync);
   $("interval").value = cachedSettings.syncIntervalMinutes || 60;
 }
 
-function renderCollections() {
-  const list = $("collectionList");
+function renderPlatforms() {
+  const list = $("platformList");
   list.innerHTML = "";
-  if (!discoveredCollections.length) return;
-  const selected = new Set(cachedSettings.selectedCollections || []);
-  const selectAllRow = document.createElement("label");
-  selectAllRow.className = "item";
-  selectAllRow.innerHTML = `
-    <input type="checkbox" id="selectAll" ${selected.size === 0 ? "checked" : ""} />
-    <span class="title"><strong>All collections</strong> (default)</span>
-  `;
-  list.appendChild(selectAllRow);
-  selectAllRow.addEventListener("change", () => {
-    if ($("selectAll").checked) {
-      list.querySelectorAll(".item .pick").forEach((cb) => (cb.checked = false));
-      list.querySelectorAll(".item").forEach((item) => item.classList.remove("checked"));
-    }
-  });
+  const selected = new Set(cachedSettings.selectedPlatforms || []);
 
-  for (const c of discoveredCollections) {
+  for (const platform of platforms) {
     const row = document.createElement("label");
-    row.className = "item" + (selected.has(c.id) ? " checked" : "");
+    row.className = `item${selected.has(platform.id) ? " checked" : ""}`;
     row.innerHTML = `
-      <input type="checkbox" class="pick" data-id="${c.id}" ${selected.has(c.id) ? "checked" : ""} />
-      <span class="title">${escapeHtml(c.title || "Untitled")}</span>
+      <input type="checkbox" class="pick" data-id="${platform.id}" ${selected.has(platform.id) ? "checked" : ""} />
+      <span class="title">${escapeHtml(platform.label)}</span>
+      <span class="meta">${escapeHtml(platform.sector || platform.kind || "")}</span>
     `;
     list.appendChild(row);
     row.addEventListener("change", () => {
-      const cb = row.querySelector(".pick");
-      row.classList.toggle("checked", cb.checked);
-      const anyChecked = !!list.querySelector(".pick:checked");
-      $("selectAll").checked = !anyChecked;
+      row.classList.toggle("checked", row.querySelector(".pick").checked);
     });
   }
 }
 
-$("discover").addEventListener("click", async () => {
-  $("discover").disabled = true;
-  setStatus("discoverStatus", "Discovering…");
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "DISCOVER_COLLECTIONS" });
-    if (!response?.ok) throw new Error(response?.error || "Discovery failed");
-    discoveredCollections = response.payload.collections || [];
-    renderCollections();
-    setStatus("discoverStatus", `Found ${discoveredCollections.length} collection(s).`, "ok");
-  } catch (error) {
-    setStatus("discoverStatus", error.message, "err");
-  } finally {
-    $("discover").disabled = false;
-  }
-});
-
-$("save").addEventListener("click", async () => {
-  const selectAll = $("selectAll");
-  const isAll = !selectAll || selectAll.checked;
-  const selectedCollections = isAll
-    ? null
-    : Array.from(document.querySelectorAll(".pick:checked")).map((cb) => cb.dataset.id);
-
-  const next = {
-    appEndpoint: $("endpoint").value.trim() || "http://localhost:3000/api/archive",
-    username: $("username").value.trim(),
-    autoDetectUsername: $("autoDetect").checked,
-    selectedCollections,
-    perCollectionLimit: Number($("perCollection").value) || 0,
-    totalPostLimit: Number($("totalCap").value) || 0,
-    syncIntervalMinutes: Math.max(5, Math.min(720, Number($("interval").value) || 60))
-  };
-
-  const response = await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings: next });
-  if (!response?.ok) {
-    setStatus("footerStatus", response?.error || "Save failed.", "err");
+function renderLastRun(syncRun, archive) {
+  if (!syncRun) {
+    setStatus("runStatus", "No sync yet.", "");
     return;
   }
+
+  if (syncRun.status === "failed") {
+    setStatus("runStatus", syncRun.errors?.[0] || "Last sync failed.", "err");
+    return;
+  }
+
+  const platformsCaptured = archive?.summary?.platformsCaptured?.length || 0;
+  setStatus(
+    "runStatus",
+    `Last sync captured ${archive?.summary?.postsCaptured || 0} item(s) across ${platformsCaptured} platform(s).`,
+    "ok"
+  );
+}
+
+$("save").addEventListener("click", async () => {
+  const selectedPlatforms = Array.from(document.querySelectorAll(".pick:checked")).map((checkbox) => checkbox.dataset.id);
+  const nextSettings = {
+    appEndpoint: $("endpoint").value.trim() || "http://localhost:3000/api/archive",
+    enableAutoSync: $("enableAutoSync").checked,
+    syncIntervalMinutes: Math.max(5, Math.min(720, Number($("interval").value) || 60)),
+    selectedPlatforms
+  };
+
+  const response = await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", settings: nextSettings });
+  if (!response?.ok) {
+    setStatus("footerStatus", response?.error || "Could not save collector settings.", "err");
+    return;
+  }
+
   cachedSettings = response.settings;
-  setStatus("footerStatus", "Saved.", "ok");
+  setStatus("footerStatus", "Settings saved.", "ok");
 });
 
 $("syncNow").addEventListener("click", async () => {
-  setStatus("footerStatus", "Sync started…");
+  setStatus("footerStatus", "Running manual sync across selected platforms...");
   const response = await chrome.runtime.sendMessage({ type: "RUN_SYNC", trigger: "options-page" });
   if (!response?.ok) {
-    setStatus("footerStatus", response?.error || "Sync failed.", "err");
+    setStatus("footerStatus", response?.error || "Manual sync failed.", "err");
     return;
   }
+
   const archive = response.result;
-  setStatus("footerStatus", `Synced ${archive?.summary?.postsCaptured || 0} posts across ${archive?.summary?.collectionsCaptured || 0} collection(s).`, "ok");
+  setStatus(
+    "footerStatus",
+    `Synced ${archive.summary.postsCaptured} item(s) from ${(archive.summary.platformsCaptured || []).length} platform(s).`,
+    "ok"
+  );
+  renderLastRun(archive.syncRun, archive);
 });
 
 function setStatus(id, text, kind) {
-  const el = $(id);
-  el.textContent = text;
-  el.className = "status" + (kind ? ` ${kind}` : "");
+  const element = $(id);
+  element.textContent = text;
+  element.className = `status${kind ? ` ${kind}` : ""}`;
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[character]));
 }
 
 bootstrap();

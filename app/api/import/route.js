@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { mergeIntoArchive, writeArchive } from "@/lib/archive-store";
 import { corsHeaders, MAX_ARCHIVE_BYTES } from "@/lib/config";
-import { parseExportPayload } from "@/lib/ig-data-export";
+import { parseSocialImportPayload } from "@/lib/social-import";
 
 function withCors(response, origin) {
   for (const [k, v] of Object.entries(corsHeaders(origin))) response.headers.set(k, v);
@@ -46,7 +46,7 @@ export async function POST(request) {
 
   let archive;
   try {
-    archive = await parseExportPayload({ buffer, filename });
+    archive = await parseSocialImportPayload({ buffer, filename });
   } catch (error) {
     return withCors(NextResponse.json({ ok: false, error: error.message || "Could not parse upload." }, { status: 400 }), origin);
   }

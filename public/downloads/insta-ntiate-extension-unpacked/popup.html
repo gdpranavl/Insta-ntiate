@@ -10,22 +10,25 @@
       <header>
         <div class="mark">IN</div>
         <div>
-          <p class="eyebrow">Background sync</p>
-          <h1>Insta-ntiate</h1>
+          <p class="eyebrow">Manual sync</p>
+          <h1>Digital world collector</h1>
         </div>
       </header>
 
       <div class="status">
         <p class="label">Status</p>
         <strong id="statusText">Idle</strong>
-        <p id="statusDetail" class="detail">No sync yet.</p>
+        <p id="statusDetail" class="detail">Ready to collect from selected socials.</p>
       </div>
 
-      <button id="syncBtn" class="btn primary" type="button">Sync now</button>
-      <button id="optionsBtn" class="btn ghost" type="button">Open settings</button>
-      <button id="exportBtn" class="btn text" type="button">Download archive JSON</button>
+      <div class="status compact">
+        <p class="label">Selected platforms</p>
+        <p id="selectedPlatforms" class="detail">loading...</p>
+      </div>
 
-      <p class="hint">This collector is for users who want scheduled background sync. For one-shot scans, use the bookmarklet on the web app — no install required.</p>
+      <button id="syncBtn" class="btn primary" type="button">Manual sync now</button>
+      <button id="optionsBtn" class="btn ghost" type="button">Choose socials</button>
+      <button id="exportBtn" class="btn text" type="button">Download archive JSON</button>
     </main>
     <script src="./popup.js"></script>
   </body>

@@ -12,7 +12,7 @@ The product value is not just "fetch my Instagram saves." The stronger value pro
 - support visual search over videos and images
 - enrich content with OCR, transcript extraction, embeddings, and LLM-generated summaries/tags
 
-The extension is the collector.
+The collector layer is now multi-source.
 The web app is the product.
 
 ## Current Decisions
@@ -26,17 +26,21 @@ The web app is the product.
 - Primary data collection layer: browser extension
 - Mobile app: not in scope for the initial version
 - Current implementation style: Next.js web app plus Chrome extension
+- The homepage is intended to stay search-first and low-noise.
+- Detailed collector setup now lives on a separate page.
 
 ### Sync Model
 - Preferred: near-real-time or periodic sync from the user's active browser environment
 - Avoid: manual one-by-one sharing of reels/posts
 - Fallback: Instagram data export import for bootstrap or backfill
-- Current V1 implementation: startup/manual/background-alarm sync inside the Chrome extension, pushing the latest archive into the local Next app API on `localhost:3000`
+- Current implementation: manual platform-selected sync inside the Chrome extension, with auto sync behind an explicit checkbox
+- Current extension path: scrape from currently open, logged-in platform tabs for the selected socials
 
 ### Data Access Direction
 - Do not rely on official Instagram APIs for consumer saved/liked content
 - Do not make server-side login scraping the primary architecture
 - Prefer collection from the user's existing authenticated browser session
+- Apply the same local-browser collection philosophy across other supported web socials where practical
 
 ## Why We Rejected Other Primary Directions
 
@@ -69,34 +73,40 @@ The extension-based direction is currently the preferred approach because it:
 ### Web App
 - A modern Next.js landing page and archive viewer now exist.
 - The web app includes:
-  - extension ZIP download call-to-action
+  - search-first dashboard
+  - platform sector cards
   - direct archive reading from the app's local API store
-  - archive JSON import as fallback
-  - searchable saved-post cards
-  - summary metrics for collections, posts, videos, and last sync time
+  - multi-format import path
+  - secondary collectors page for verbose setup and integration detail
 
 ### Extension
 - A Chrome Manifest V3 extension now exists in `extension/`.
 - Current behavior:
-  - starts from Chrome lifecycle events and alarms
   - supports manual sync from the popup
-  - attempts Instagram saved-page access with route fallback
-  - captures the first two collections
-  - captures the first five posts in each collection
-  - opens each post/reel in a background tab for deeper metadata extraction
-  - stores link, creator, caption, thumbnail, and video URL when exposed
+  - lets the user choose which socials to scrape
+  - keeps auto sync as opt-in only
+  - scrapes currently open platform tabs rather than assuming Instagram-only background sync
   - pushes the archive into the local app endpoint and can still export JSON manually
 
+### Supported Socials
+- Instagram
+- WhatsApp
+- Slack
+- Discord
+- Telegram
+- LinkedIn
+- Reddit
+
 ### Current Limitation
-- This first implementation is selector-driven and should be treated as a working prototype, not a hardened collector.
-- Real Instagram DOM validation is still required.
-- Video capture is best-effort only because Instagram may not expose stable direct video URLs in page markup.
+- This remains selector-driven and should be treated as a working prototype, not a hardened collector.
+- Real DOM validation is still required on each supported platform.
+- Imports are strongest today for Instagram, WhatsApp, and Slack; the rest currently depend on live web capture.
 
 ### Current Working State
 - The local development workflow assumes the Next.js app is running on `http://localhost:3000`.
 - The extension attempts to push harvested archive data directly to `http://localhost:3000/api/archive`.
 - JSON export still exists as a fallback debug path.
-- The main unstable area is Instagram metadata extraction for creator, caption, and video URL reliability.
+- The main unstable area is cross-platform selector reliability inside the extension collectors.
 
 ## Important Product Assumptions
 - Users are comfortable installing a browser extension
@@ -127,7 +137,7 @@ The team currently has three members and wants better project continuity and tra
 
 ## Immediate Next Step
 The next concrete build step after this checkpoint should be live validation in Chrome against a real logged-in Instagram session:
-- verify saved-page routes
-- refine selectors for collection and post extraction
-- confirm whether inactive-tab sync works consistently
-- verify whether direct video URLs are exposed often enough to be useful
+- verify each supported social against a real logged-in browser tab
+- refine selectors for platform-specific text extraction
+- verify WhatsApp and Slack imports against real export payloads
+- decide whether bookmarklet support should also be generalized beyond Instagram

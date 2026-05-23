@@ -1428,3 +1428,421 @@
   .step { padding: 22px; }
   .lightboxBody { padding: 24px; }
 }
+
+.cleanShell,
+.collectorShell {
+  width: min(1220px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 28px 0 72px;
+}
+
+.cleanHeader,
+.collectorHeader,
+.searchBar,
+.cleanEmpty,
+.collectorImportSection {
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: var(--bg-elevated);
+  backdrop-filter: blur(18px);
+}
+
+.cleanHeader,
+.collectorHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  padding: 30px;
+}
+
+.cleanEyebrow {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+  letter-spacing: var(--letter-label);
+  text-transform: uppercase;
+}
+
+.cleanTitle {
+  margin: 14px 0 0;
+  font-size: clamp(2.4rem, 5vw, 4rem);
+  line-height: 0.98;
+  font-weight: 200;
+  background: var(--chrome-text);
+  background-size: 100% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.cleanLead {
+  max-width: 62ch;
+  margin: 18px 0 0;
+  color: var(--ink-dim);
+  line-height: 1.7;
+}
+
+.cleanHeaderMeta {
+  min-width: 260px;
+  display: grid;
+  gap: 8px;
+  color: var(--ink-dim);
+  font-size: 0.82rem;
+}
+
+.cleanHeaderMeta code,
+.cleanHeaderMeta strong {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.searchBar {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-top: 22px;
+  padding: 18px;
+}
+
+.searchBarInput {
+  flex: 1;
+  min-width: 240px;
+  padding: 16px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  font-size: 0.96rem;
+}
+
+.searchBarInput:focus {
+  outline: none;
+  border-color: var(--border-chrome);
+}
+
+.searchActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cleanButtonSecondary,
+.cleanButtonGhost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px;
+  border-radius: 999px;
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cleanButtonSecondary {
+  border: 1px solid var(--border-chrome);
+  background:
+    linear-gradient(180deg, #ffffff 0%, #c8c8c8 50%, #e8e8e8 51%, #ffffff 100%);
+  color: #0a0a0a;
+}
+
+.cleanButtonGhost {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+}
+
+.cleanBanner {
+  margin-top: 16px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink-dim);
+}
+
+.platformStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.platformCard {
+  text-align: left;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.platformCard strong {
+  display: block;
+  margin-top: 12px;
+  font-size: 2rem;
+  font-weight: 200;
+}
+
+.platformCardActive {
+  border-color: var(--border-chrome);
+  box-shadow: var(--shadow-card);
+}
+
+.platformLabel,
+.platformMeta,
+.cleanItemType,
+.cleanPlatformBadge {
+  display: inline-flex;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+}
+
+.platformLabel,
+.platformMeta {
+  color: var(--ink-faint);
+}
+
+.platformMeta {
+  margin-top: 6px;
+}
+
+.cleanEmpty {
+  margin-top: 24px;
+  padding: 42px 28px;
+  text-align: center;
+}
+
+.cleanEmpty h2 {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 300;
+}
+
+.cleanEmpty p {
+  margin: 12px auto 0;
+  max-width: 56ch;
+  color: var(--ink-dim);
+  line-height: 1.65;
+}
+
+.cleanGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.cleanItemCard {
+  text-align: left;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.cleanItemTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cleanPlatformBadge {
+  color: #0a0a0a;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #c8c8c8 50%, #e8e8e8 51%, #ffffff 100%);
+}
+
+.cleanItemType {
+  color: var(--ink-faint);
+}
+
+.cleanItemAuthor {
+  display: block;
+  margin-top: 14px;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.cleanItemText {
+  margin: 10px 0 0;
+  color: var(--ink-dim);
+  line-height: 1.62;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cleanItemFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+}
+
+.cleanModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg-overlay);
+}
+
+.cleanModal {
+  position: relative;
+  width: min(760px, 100%);
+  padding: 28px;
+  border-radius: 28px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated-strong);
+}
+
+.cleanModalClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.cleanModalMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cleanModal h3 {
+  margin: 16px 0 0;
+  font-size: 1.5rem;
+  font-weight: 300;
+}
+
+.cleanModalText {
+  margin-top: 14px;
+  color: var(--ink-dim);
+  line-height: 1.72;
+  white-space: pre-wrap;
+}
+
+.cleanCollectionList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.cleanCollectionPill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+}
+
+.collectorGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.collectorCard {
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+}
+
+.collectorCard h2 {
+  margin: 14px 0 0;
+  font-size: 1.2rem;
+  font-weight: 300;
+}
+
+.collectorCard p {
+  margin: 10px 0 0;
+  color: var(--ink-dim);
+}
+
+.collectorList {
+  margin: 16px 0 0;
+  padding-left: 18px;
+  color: var(--ink-faint);
+  line-height: 1.7;
+}
+
+.collectorImportSection {
+  margin-top: 24px;
+  padding: 24px;
+}
+
+.collectorImportSection h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 300;
+}
+
+.collectorImportSection p {
+  margin: 12px 0 0;
+  color: var(--ink-dim);
+  line-height: 1.7;
+}
+
+@media (max-width: 980px) {
+  .platformStrip,
+  .cleanGrid,
+  .collectorGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cleanHeader,
+  .collectorHeader,
+  .searchBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 640px) {
+  .cleanShell,
+  .collectorShell {
+    width: calc(100% - 24px);
+    padding-top: 18px;
+  }
+
+  .platformStrip,
+  .cleanGrid,
+  .collectorGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .searchActions {
+    flex-direction: column;
+  }
+}

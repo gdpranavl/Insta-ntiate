@@ -54,9 +54,17 @@ function normalizeIncoming(input) {
   return {
     sourceAccount: input.sourceAccount || { username: "", lastSyncedAt: new Date().toISOString() },
     syncRun: input.syncRun || null,
-    collections: Array.isArray(input.collections) ? input.collections : [],
+    collections: (Array.isArray(input.collections) ? input.collections : []).map((collection) => ({
+      ...collection,
+      platform: collection.platform || "instagram",
+      kind: collection.kind || "collection"
+    })),
     posts: (Array.isArray(input.posts) ? input.posts : []).map((p) => ({
       ...p,
+      platform: p.platform || "instagram",
+      entityType: p.entityType || "post",
+      textContent: p.textContent || p.caption || "",
+      authorName: p.authorName || p.creatorHandle || "",
       enrichments: p.enrichments || {}
     })),
     memberships: Array.isArray(input.memberships) ? input.memberships : [],
