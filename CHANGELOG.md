@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-05-24
+
+### Fixed
+- Fixed React hydration mismatch warning caused by browser extensions (Kantu, Scribe Recorder) injecting `data-kantu` and `data-scribe-recorder-ready` attributes into the `<html>` tag. Added `suppressHydrationWarning` to the root `<html>` element in `app/layout.js`.
+
+### Changed
+- Removed hardcoded `HARDCODED_USERNAME = "thegdpranavl"` from the extension. The extension now detects the actual logged-in Instagram user's username dynamically before syncing.
+
+### Added
+- Added login detection to the extension sync flow. Before scraping saved collections, the extension opens `instagram.com` in a background tab and checks if the user is logged in via a new `CHECK_LOGIN` content script handler. If the user is not logged in, the extension opens `instagram.com/accounts/login/` in a foreground tab and surfaces a clear error in the popup.
+- Added `checkLoginStatus()` and `readViewerUsername()` functions to `content.js` to read the logged-in username from Instagram's embedded page JSON.
+- Added `checkInstagramLogin()` to `background.js` to orchestrate the login check before any sync attempt.
+- Added auto port-discovery to `pushArchiveToApp()`. The extension now tries ports 3000 → 3001 → 3002 → 3003 in sequence when pushing the archive to the Next.js app. The first successful port is saved to settings for subsequent syncs. This fixes the common case where Next.js starts on 3001 because 3000 is in use.
+- Added `SET_APP_ENDPOINT` message handler to `background.js` and a `setAppEndpoint()` function so the popup can update the target URL.
+- Added an app endpoint input field and Save button to the extension popup so users can manually override the target URL (e.g. change 3000 → 3001) without editing code.
+- Synced all extension changes to `public/downloads/insta-ntiate-extension-unpacked/` for distribution.
+
+### Decided
+- The sync flow must always verify Instagram login status before attempting to scrape. Silent failures due to logged-out sessions are not acceptable.
+- The app endpoint should be auto-discovered by port scanning rather than requiring manual configuration.
+- The extension popup should expose the current app endpoint and allow users to override it.
+
+### Open Questions
+- Whether we should build Phase 1 content enrichment: full caption extraction (no 500-char limit), hashtag extraction, URL extraction from captions, "link in bio" → profile bio link scrape, and `postDate` from JSON-LD.
+- Whether to build Phase 2 transcription: pass reel video URLs to OpenAI Whisper or AssemblyAI while CDN URLs are still fresh, store transcripts alongside posts in the archive.
+- Instagram CDN video and thumbnail URLs are signed and expire within hours — whether to download and persist media blobs at sync time via `chrome.downloads` or a backend endpoint.
+
 ## 2026-05-22
 
 ### Added
