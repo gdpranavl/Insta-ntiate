@@ -8,6 +8,10 @@
 })();
 
 async function handleMessage(message) {
+  if (message?.type === "CHECK_LOGIN") {
+    return checkLoginStatus();
+  }
+
   if (message?.type === "SCRAPE_SAVED_OVERVIEW") {
     return scrapeSavedOverview(message.collectionLimit || 2);
   }
@@ -21,6 +25,40 @@ async function handleMessage(message) {
   }
 
   throw new Error("Unsupported scrape command.");
+}
+
+async function checkLoginStatus() {
+  await delay(2500);
+
+  if (window.location.pathname.includes("/accounts/login/") ||
+      window.location.pathname.includes("/accounts/emailsignup/")) {
+    return { loggedIn: false, username: null };
+  }
+
+  const username = readUsername() || readViewerUsername();
+  if (username) {
+    return { loggedIn: true, username };
+  }
+
+  return { loggedIn: false, username: null };
+}
+
+function readViewerUsername() {
+  const html = document.documentElement.innerHTML;
+  const patterns = [
+    /"viewer"\s*:\s*\{[^}]*?"username"\s*:\s*"([^"]+)"/,
+    /"config"\s*:\s*\{[^}]*?"viewer_id"\s*:\s*"[^"]*"[^}]*?"username"\s*:\s*"([^"]+)"/,
+    /"logging_page_id"\s*:\s*"[^"]*profilePage_(\d+)"/
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return "";
 }
 
 async function scrapeSavedOverview(collectionLimit) {
