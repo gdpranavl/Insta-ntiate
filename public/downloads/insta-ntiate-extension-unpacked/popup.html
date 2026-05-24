@@ -2,33 +2,46 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Insta-ntiate Collector</title>
     <link rel="stylesheet" href="./popup.css" />
   </head>
   <body>
-    <main class="shell">
-      <header>
-        <div class="mark">IN</div>
-        <div>
-          <p class="eyebrow">Manual sync</p>
-          <h1>Digital world collector</h1>
+    <main class="popup-shell">
+      <section class="hero card">
+        <div class="brand-row">
+          <div class="mark">IN</div>
+          <div>
+            <p class="eyebrow">Manual sync</p>
+            <h1>Collector ready.</h1>
+            <p class="lead">Run sync from the current settings or jump straight into the options page for more control.</p>
+          </div>
         </div>
-      </header>
-
-      <div class="status">
-        <p class="label">Status</p>
-        <strong id="statusText">Idle</strong>
+        <div class="hero-meta">
+          <div class="pill">
+            <span>Status</span>
+            <strong id="statusText">Idle</strong>
+          </div>
+          <div class="pill">
+            <span>Platforms</span>
+            <strong id="selectedPlatforms">Loading</strong>
+          </div>
+        </div>
         <p id="statusDetail" class="detail">Ready to collect from selected socials.</p>
-      </div>
+      </section>
 
-      <div class="status compact">
-        <p class="label">Selected platforms</p>
-        <p id="selectedPlatforms" class="detail">loading...</p>
-      </div>
+      <section class="card info-card">
+        <div class="section-head">
+          <p class="eyebrow">Current setup</p>
+          <button id="optionsBtn" class="ghost-link" type="button">Open settings</button>
+        </div>
+        <p class="detail muted">Use the settings page to tune Instagram scopes, collection counts, and extraction fields.</p>
+      </section>
 
-      <button id="syncBtn" class="btn primary" type="button">Manual sync now</button>
-      <button id="optionsBtn" class="btn ghost" type="button">Choose socials</button>
-      <button id="exportBtn" class="btn text" type="button">Download archive JSON</button>
+      <section class="actions">
+        <button id="syncBtn" class="btn primary" type="button">Manual sync now</button>
+        <button id="exportBtn" class="btn ghost" type="button">Download archive JSON</button>
+      </section>
     </main>
     <script src="./popup.js"></script>
   </body>

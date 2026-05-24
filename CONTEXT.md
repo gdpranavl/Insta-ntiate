@@ -106,6 +106,8 @@ The extension-based direction is currently the preferred approach because it:
 - The local development workflow assumes the Next.js app is running on `http://localhost:3000`.
 - The extension attempts to push harvested archive data directly to `http://localhost:3000/api/archive`.
 - JSON export still exists as a fallback debug path.
+- Instagram sync now also attempts to hydrate reel detail pages and persist downloaded reel assets locally under `public/downloads/instagram-media/` with a manifest.
+- The options UI now exposes copy actions for the archive payload, debug logs, and discovered collections.
 - The main unstable area is cross-platform selector reliability inside the extension collectors.
 
 ## Important Product Assumptions
@@ -124,7 +126,7 @@ The extension-based direction is currently the preferred approach because it:
   - liked posts
   - reels
   - post detail pages
-- Do we store only metadata first, or also cache media assets?
+- How much media should we cache locally beyond Instagram reel downloads during development?
 - What is the smallest useful searchable schema for V1?
 - How do we handle deleted posts, unavailable media, or changed collection membership?
 

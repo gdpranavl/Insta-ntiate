@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { clearArchive, mergeIntoArchive, readArchive, writeArchive } from "@/lib/archive-store";
+import { persistInstagramMedia } from "@/lib/instagram-media-store";
 import { MAX_ARCHIVE_BYTES, corsHeaders } from "@/lib/config";
+
+export const runtime = "nodejs";
 
 function withCors(response, origin) {
   const headers = corsHeaders(origin);
@@ -38,11 +41,17 @@ export async function POST(request) {
 
   if (mode === "merge") {
     const merged = await mergeIntoArchive(archive);
-    return withCors(NextResponse.json({ ok: true, archive: merged }), origin);
+    const mediaResult = await persistInstagramMedia(merged);
+    const enriched = mediaResult.archive;
+    await writeArchive(enriched);
+    return withCors(NextResponse.json({ ok: true, archive: enriched, media: mediaResult.summary }), origin);
   }
 
   await writeArchive(archive);
-  return withCors(NextResponse.json({ ok: true, archive }), origin);
+  const mediaResult = await persistInstagramMedia(archive);
+  const enriched = mediaResult.archive;
+  await writeArchive(enriched);
+  return withCors(NextResponse.json({ ok: true, archive: enriched, media: mediaResult.summary }), origin);
 }
 
 export async function DELETE(request) {

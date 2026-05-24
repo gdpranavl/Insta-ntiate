@@ -1,10 +1,11 @@
 :root {
-  --bg: #090909;
-  --panel: rgba(255, 255, 255, 0.04);
+  --bg: #07080b;
+  --panel: rgba(255, 255, 255, 0.06);
   --line: rgba(255, 255, 255, 0.12);
-  --ink: #f5f2ea;
-  --muted: rgba(245, 242, 234, 0.68);
-  --faint: rgba(245, 242, 234, 0.42);
+  --ink: #f7f4ee;
+  --muted: rgba(247, 244, 238, 0.7);
+  --faint: rgba(247, 244, 238, 0.46);
+  --accent: #d7f36a;
 }
 
 * {
@@ -13,107 +14,180 @@
 
 body {
   margin: 0;
-  min-width: 340px;
-  background:
-    radial-gradient(60% 32% at 50% 0%, rgba(255, 255, 255, 0.08), transparent 68%),
-    var(--bg);
+  min-width: 360px;
   color: var(--ink);
-  font-family: Arial, sans-serif;
+  font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background:
+    radial-gradient(480px 240px at 50% 0%, rgba(215, 243, 106, 0.16), transparent 72%),
+    linear-gradient(180deg, #090a0d 0%, #060709 100%);
 }
 
-.shell {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
+.popup-shell {
+  padding: 14px;
+  display: grid;
   gap: 12px;
 }
 
-header,
-.status {
+.card {
   border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  backdrop-filter: blur(18px);
 }
 
-header {
+.hero {
+  padding: 16px;
+}
+
+.brand-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
   display: grid;
   place-items: center;
-  color: #080808;
-  font-weight: 700;
-  background:
-    linear-gradient(180deg, #ffffff 0%, #c8c8c8 50%, #ececec 51%, #ffffff 100%);
+  color: #0b0b0b;
+  font-weight: 800;
+  background: linear-gradient(180deg, #fefefe 0%, #cfd4da 100%);
 }
 
-.eyebrow,
-.label,
-.detail {
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+}
+
+h1,
+p {
   margin: 0;
 }
 
-.eyebrow,
-.label {
-  color: var(--faint);
-  font-size: 0.72rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
 h1 {
-  margin: 2px 0 0;
-  font-size: 1rem;
+  font-size: 1.2rem;
+  line-height: 1.15;
 }
 
-.status {
-  padding: 12px;
+.lead {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 0.9rem;
 }
 
-.status strong {
+.hero-meta {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pill {
+  padding: 11px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pill span {
   display: block;
-  margin-top: 6px;
+  font-size: 0.68rem;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.pill strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.92rem;
 }
 
 .detail {
-  margin-top: 6px;
+  margin-top: 12px;
   color: var(--muted);
-  line-height: 1.45;
+  line-height: 1.5;
+  font-size: 0.88rem;
 }
 
-.compact .detail {
-  margin-top: 8px;
-  text-transform: capitalize;
+.info-card {
+  padding: 14px 16px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.ghost-link {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.muted {
+  color: var(--faint);
+}
+
+.actions {
+  display: grid;
+  gap: 10px;
 }
 
 .btn {
   width: 100%;
-  padding: 11px 14px;
+  padding: 12px 14px;
   border-radius: 999px;
   border: 1px solid var(--line);
   font: inherit;
   cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.btn:hover,
+.ghost-link:hover {
+  transform: translateY(-1px);
 }
 
 .btn.primary {
-  background:
-    linear-gradient(180deg, #ffffff 0%, #c8c8c8 50%, #ececec 51%, #ffffff 100%);
-  color: #080808;
+  border-color: rgba(215, 243, 106, 0.65);
+  background: linear-gradient(180deg, #eefc8f 0%, #d7f36a 100%);
+  color: #0b0f0a;
+  font-weight: 700;
 }
 
 .btn.ghost {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.03);
   color: var(--ink);
 }
 
-.btn.text {
-  background: transparent;
+.status {
   color: var(--muted);
+}
+
+.statusText,
+strong {
+  font-weight: 700;
+}
+
+@media (max-width: 420px) {
+  body {
+    min-width: 320px;
+  }
+
+  .hero-meta {
+    grid-template-columns: 1fr;
+  }
 }

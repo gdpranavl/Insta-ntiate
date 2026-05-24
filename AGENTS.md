@@ -78,18 +78,18 @@ Use for:
 
 Treat this as design guidance, not runtime truth.
 
-### [CHANGELOG.md](/D:/YouLeft/Insta-ntiate/CHANGELOG.md)
+#### [CHANGELOG.md](/D:/YouLeft/Insta-ntiate/CHANGELOG.md)
 Use for:
-- a concise history of meaningful changes and decisions
-- understanding why a recent change may exist
+- the single source-of-truth history of meaningful changes and decisions
+- providing a concise explanation of why recent changes exist and how to validate them
 
-Update it whenever you materially change:
-- architecture
-- behavior
-- workflow
-- extension sync logic
-- API shape
-- local developer flow
+Expected format and agent responsibilities:
+- Top-level sections by contributor: `## contributor-name` (e.g., `## harshita`).
+- Under each contributor, add dated entries: `### YYYY-MM-DD - short title`.
+- Within each dated entry, prefer named subsections such as `Direction`, `What shipped`, `Added/Changed/Removed`, and `Verification`.
+- When you make a material change (architecture, behavior, workflow, extension sync logic, API shape, or local developer flow), append a dated entry under your contributor heading following the format above.
+- Preserve existing content and avoid silent rewrites; prefer appending and clearly noting replacements or removals.
+- Agents must read and trust `CHANGELOG.md` for recent changes (after also inspecting the code), and must update it as part of the finish criteria for any non-trivial change.
 
 ## Operating Rules
 

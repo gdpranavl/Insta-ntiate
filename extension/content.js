@@ -9,16 +9,17 @@
 
 async function handleMessage(message) {
   if (message?.type === "COLLECT_PLATFORM_PAGE") {
-    return collectCurrentPage(message.platform);
+    return collectCurrentPage(message.platform, message.settings || {});
   }
   throw new Error("Unsupported collector command.");
 }
 
-async function collectCurrentPage(platform) {
+async function collectCurrentPage(platform, settings = {}) {
   await settlePage();
+  console.log("[Insta-ntiate][content] collectCurrentPage", { platform, path: location.pathname, settings });
 
   if (platform === "instagram") {
-    return collectInstagram();
+    return collectInstagram(settings);
   }
   if (platform === "whatsapp") {
     return collectWhatsApp();
@@ -42,16 +43,30 @@ async function collectCurrentPage(platform) {
   throw new Error(`Unsupported platform: ${platform}`);
 }
 
-function collectInstagram() {
-  const path = location.pathname;
-  if (/\/saved\/[^/]+\/?$/.test(path)) {
-    const title = readText("h1, h2") || "Saved collection";
+async function collectInstagram(settings = {}) {
+  console.log("[Insta-ntiate][content] collectInstagram:start", { path: location.pathname, settings });
+  const scopes = settings.enabledScopes || { saved: true, liked: false, history: false };
+  const username = detectInstagramUsername();
+  const savedPathInfo = parseInstagramSavedPath(location.pathname);
+  if (savedPathInfo.mode === "collection") {
+    if (!scopes.saved) {
+      return {
+        sourceAccount: { username: username || "", lastSyncedAt: new Date().toISOString() },
+        collections: [],
+        posts: [],
+        memberships: [],
+        notes: ["Instagram saved scope disabled in settings."],
+        warnings: []
+      };
+    }
+    const title = readText("h1, h2") || savedPathInfo.collectionTitle || "Saved collection";
     const collectionId = makeId("instagram", title);
-    const posts = Array.from(document.querySelectorAll("a[href*='/p/'], a[href*='/reel/']"))
+    let posts = Array.from(document.querySelectorAll("article a[href*='/p/'], article a[href*='/reel/'], a[href*='/p/'], a[href*='/reel/']"))
       .map((anchor, index) => {
         const url = normalizeUrl(anchor.href);
         const shortcode = extractShortcode(url);
-        return {
+        const caption = anchor.querySelector("img")?.alt || "";
+        const post = {
           id: makeId("instagram", shortcode || url),
           platform: "instagram",
           entityType: /\/reel\//.test(url) ? "reel" : "post",
@@ -59,8 +74,8 @@ function collectInstagram() {
           canonicalUrl: url,
           creatorHandle: "",
           authorName: "",
-          caption: anchor.querySelector("img")?.alt || "",
-          textContent: anchor.querySelector("img")?.alt || "",
+          caption,
+          textContent: caption,
           mediaType: /\/reel\//.test(url) ? "video" : "image",
           thumbnailUrl: anchor.querySelector("img")?.src || "",
           videoUrl: "",
@@ -68,9 +83,29 @@ function collectInstagram() {
           enrichments: {},
           rank: index + 1
         };
+        return applyExtractionSettings(post, settings.extractionFields);
       })
-      .filter(uniqueById)
-      .slice(0, 30);
+      .filter(uniqueById);
+
+    // determine limit: try to find a matching selectedCollections entry
+    let limit = 30;
+    if (Array.isArray(settings.selectedCollections) && settings.selectedCollections.length) {
+      const found = settings.selectedCollections.find((c) => c.id === collectionId) || null;
+      if (found && typeof found.reelCount === 'number') {
+        limit = Math.max(0, Math.min(200, found.reelCount));
+      }
+    }
+    if (!limit && typeof settings.reelCount === 'number') {
+      limit = Math.max(0, Math.min(200, settings.reelCount));
+    }
+    posts = posts.slice(0, limit || 30);
+    console.log("[Insta-ntiate][content] collectInstagram:collection", {
+      username,
+      title,
+      collectionId,
+      totalPosts: posts.length,
+      limit
+    });
 
     return buildFragment({
       platform: "instagram",
@@ -79,12 +114,13 @@ function collectInstagram() {
       collectionKind: "collection",
       collectionUrl: normalizeUrl(location.href),
       posts,
-      note: `Instagram collection scraped from ${normalizeUrl(location.href)}.`
+      note: `Instagram collection scraped from ${normalizeUrl(location.href)}.`,
+      username
     });
   }
 
-  if (/\/(p|reel)\//.test(path)) {
-    const post = collectInstagramPost();
+  if (/\/(p|reel)\//.test(location.pathname)) {
+    const post = collectInstagramPost(settings);
     return buildFragment({
       platform: "instagram",
       collectionId: makeId("instagram", "single-post"),
@@ -92,26 +128,20 @@ function collectInstagram() {
       collectionKind: "captures",
       collectionUrl: "https://www.instagram.com/",
       posts: [post],
-      note: "Instagram post captured from current page."
+      note: "Instagram post captured from current page.",
+      username
     });
   }
 
-  const overviewCollections = Array.from(document.querySelectorAll("a[href*='/saved/']"))
-    .map((anchor) => ({
-      id: makeId("instagram", anchor.textContent || anchor.href),
-      platform: "instagram",
-      title: (anchor.textContent || anchor.getAttribute("aria-label") || "Saved collection").trim(),
-      url: normalizeUrl(anchor.href),
-      kind: "collection",
-      position: 1,
-      capturedAt: new Date().toISOString()
-    }))
-    .filter((collection) => collection.url && !/\/saved\/?$/.test(collection.url))
-    .filter(uniqueById)
-    .slice(0, 20);
+  const overviewCollections = await collectInstagramSavedOverviewCollections();
+
+  console.log("[Insta-ntiate][content] collectInstagram:overview", {
+    username,
+    collectionCount: overviewCollections.length
+  });
 
   return {
-    sourceAccount: { username: "", lastSyncedAt: new Date().toISOString() },
+    sourceAccount: { username: username || "", lastSyncedAt: new Date().toISOString() },
     collections: overviewCollections,
     posts: [],
     memberships: [],
@@ -120,7 +150,123 @@ function collectInstagram() {
   };
 }
 
-function collectInstagramPost() {
+async function collectInstagramSavedOverviewCollections() {
+  const discovered = new Map();
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const batch = Array.from(document.querySelectorAll("a[href*='/saved/']"))
+      .map((anchor, index) => {
+        const url = normalizeUrl(anchor.href);
+        const title = (anchor.textContent || anchor.getAttribute("aria-label") || anchor.getAttribute("title") || "Saved collection").trim();
+        return {
+          id: makeId("instagram", url || title || `${attempt}-${index}`),
+          platform: "instagram",
+          title,
+          url,
+          kind: "collection",
+          position: index + 1,
+          capturedAt: new Date().toISOString()
+        };
+      })
+      .filter((collection) => collection.url && !/\/saved\/?$/.test(collection.url));
+
+    for (const collection of batch) {
+      const key = collection.url || collection.id;
+      if (!discovered.has(key)) {
+        discovered.set(key, collection);
+      }
+    }
+
+    const beforeScrollCount = discovered.size;
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" });
+    await delay(900);
+    window.scrollTo({ top: 0, behavior: "instant" });
+    await delay(500);
+
+    const afterScrollBatch = Array.from(document.querySelectorAll("a[href*='/saved/']"))
+      .map((anchor, index) => {
+        const url = normalizeUrl(anchor.href);
+        const title = (anchor.textContent || anchor.getAttribute("aria-label") || anchor.getAttribute("title") || "Saved collection").trim();
+        return {
+          id: makeId("instagram", url || title || `post-scroll-${attempt}-${index}`),
+          platform: "instagram",
+          title,
+          url,
+          kind: "collection",
+          position: index + 1,
+          capturedAt: new Date().toISOString()
+        };
+      })
+      .filter((collection) => collection.url && !/\/saved\/?$/.test(collection.url));
+
+    for (const collection of afterScrollBatch) {
+      const key = collection.url || collection.id;
+      if (!discovered.has(key)) {
+        discovered.set(key, collection);
+      }
+    }
+
+    if (discovered.size === beforeScrollCount) {
+      break;
+    }
+  }
+
+  // Run a second full sweep after the initial scroll pass to catch collections
+  // that appear only after Instagram stabilizes the saved page DOM.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" });
+    await delay(1100);
+    window.scrollTo({ top: 0, behavior: "instant" });
+    await delay(700);
+
+    const batch = Array.from(document.querySelectorAll("a[href*='/saved/']"))
+      .map((anchor, index) => {
+        const url = normalizeUrl(anchor.href);
+        const title = (anchor.textContent || anchor.getAttribute("aria-label") || anchor.getAttribute("title") || "Saved collection").trim();
+        return {
+          id: makeId("instagram", url || title || `stability-${attempt}-${index}`),
+          platform: "instagram",
+          title,
+          url,
+          kind: "collection",
+          position: index + 1,
+          capturedAt: new Date().toISOString()
+        };
+      })
+      .filter((collection) => collection.url && !/\/saved\/?$/.test(collection.url));
+
+    for (const collection of batch) {
+      const key = collection.url || collection.id;
+      if (!discovered.has(key)) {
+        discovered.set(key, collection);
+      }
+    }
+  }
+
+  return Array.from(discovered.values()).slice(0, 100);
+}
+
+function parseInstagramSavedPath(pathname) {
+  const segments = String(pathname || "").split("/").filter(Boolean);
+  const savedIndex = segments.findIndex((segment) => segment === "saved");
+  if (savedIndex < 0) {
+    return { mode: "none", collectionTitle: "" };
+  }
+
+  const hasCollectionSegment = segments.length >= savedIndex + 2;
+  if (!hasCollectionSegment) {
+    return { mode: "overview", collectionTitle: "" };
+  }
+
+  const rawTitle = decodeURIComponent(segments[savedIndex + 1] || "").replace(/-/g, " ").trim();
+  const collectionTitle = rawTitle
+    ? rawTitle.replace(/\b\w/g, (char) => char.toUpperCase())
+    : "Saved collection";
+
+  return { mode: "collection", collectionTitle };
+}
+
+function collectInstagramPost(settings = {}) {
   const ogDescription = meta("og:description");
   const creator = (ogDescription.match(/@([a-z0-9._]+)/i) || [])[1] || "";
   const caption = ogDescription
@@ -129,8 +275,7 @@ function collectInstagramPost() {
     .trim();
   const url = normalizeUrl(location.href);
   const shortcode = extractShortcode(url);
-
-  return {
+  const obj = {
     id: makeId("instagram", shortcode || url),
     platform: "instagram",
     entityType: /\/reel\//.test(url) ? "reel" : "post",
@@ -146,6 +291,45 @@ function collectInstagramPost() {
     capturedAt: new Date().toISOString(),
     enrichments: {}
   };
+  console.log("[Insta-ntiate][content] collectInstagramPost", {
+    shortcode,
+    url,
+    hasVideo: Boolean(obj.videoUrl)
+  });
+  return applyExtractionSettings(obj, settings.extractionFields);
+}
+
+function applyExtractionSettings(post, extraction = {}) {
+  const enabled = {
+    id: extraction.id !== false,
+    link: extraction.link !== false,
+    caption: extraction.caption !== false,
+    comments: extraction.comments === true,
+    description: extraction.description !== false,
+    audio: extraction.audio === true
+  };
+
+  const sanitized = { ...post };
+  // id is required for merge/membership; keep it but allow redaction of display fields.
+  if (!enabled.link) {
+    sanitized.shortcode = "";
+    sanitized.canonicalUrl = "";
+  }
+  if (!enabled.caption) {
+    sanitized.caption = "";
+    sanitized.textContent = "";
+  }
+  if (!enabled.description) {
+    delete sanitized.description;
+  }
+  if (!enabled.audio) {
+    delete sanitized.audio;
+  }
+  if (!enabled.comments) {
+    delete sanitized.topComments;
+  }
+
+  return sanitized;
 }
 
 function collectWhatsApp() {
@@ -381,12 +565,12 @@ function collectReddit() {
   });
 }
 
-function buildFragment({ platform, collectionId, collectionTitle, collectionKind, collectionUrl, posts, note }) {
+function buildFragment({ platform, collectionId, collectionTitle, collectionKind, collectionUrl, posts, note, username }) {
   const now = new Date().toISOString();
   const safePosts = posts || [];
   return {
     sourceAccount: {
-      username: "",
+      username: username || "",
       lastSyncedAt: now
     },
     collections: [
@@ -437,6 +621,32 @@ function normalizeUrl(href) {
 function extractShortcode(href) {
   const match = String(href || "").match(/\/(p|reel|tv)\/([^/?#]+)/i);
   return match?.[2] || "";
+}
+
+function detectInstagramUsername() {
+  // Try to read from path if available (/{username}/saved/...)
+  const segments = location.pathname.split("/").filter(Boolean);
+  if (segments.length >= 2 && segments[1] === "saved") {
+    return segments[0];
+  }
+
+  // Profile pages sometimes include profile:username
+  const profileMeta = document.querySelector('meta[property="profile:username"]')?.content?.trim();
+  if (profileMeta) {
+    return profileMeta;
+  }
+
+  // Fallback: scan scripts for viewer username
+  const scripts = Array.from(document.scripts || []);
+  for (const script of scripts) {
+    const text = script.textContent || "";
+    let match = text.match(/"viewer"\s*:\s*\{[^}]*"username"\s*:\s*"([^"]+)"/);
+    if (match?.[1]) return match[1];
+    match = text.match(/"username"\s*:\s*"([a-z0-9._]+)"\s*,\s*"id"\s*:\s*"\d+"/i);
+    if (match?.[1]) return match[1];
+  }
+
+  return "";
 }
 
 function makeId(platform, seed) {

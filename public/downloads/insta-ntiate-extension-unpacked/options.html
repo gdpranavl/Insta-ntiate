@@ -2,57 +2,112 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Insta-ntiate · Multi-social collector</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Insta-ntiate · Collector settings</title>
     <link rel="stylesheet" href="./options.css" />
   </head>
   <body>
-    <main class="page">
-      <header>
-        <div class="mark">IN</div>
-        <div>
-          <h1>Collector settings</h1>
-          <p>Pick which socials participate in sync, keep manual sync as the default, and only enable background sync if you really want it.</p>
+    <main class="app-shell">
+      <section class="hero card">
+        <div class="brand-row">
+          <div class="mark">IN</div>
+          <div class="hero-copy">
+            <p class="eyebrow">Collector settings</p>
+            <h1>Instagram-first capture, tuned per scope.</h1>
+            <p class="lead">
+              Choose which socials are active, refine what Instagram collects, and keep the archive pipeline fast enough to trust.
+            </p>
+          </div>
+          <div class="hero-stats">
+            <div class="stat">
+              <span>Platforms</span>
+              <strong id="platformCount">0</strong>
+            </div>
+            <div class="stat">
+              <span>Sync mode</span>
+              <strong id="syncMode">Manual</strong>
+            </div>
+          </div>
         </div>
-      </header>
-
-      <section class="card">
-        <h2>Connection</h2>
-        <label class="row">
-          <span class="label">Archive endpoint</span>
-          <input id="endpoint" type="url" placeholder="http://localhost:3000/api/archive" />
-        </label>
-        <p class="hint">The extension pushes merged archive data here after each successful sync.</p>
+        <div class="hero-actions">
+          <button id="save" class="btn primary" type="button">Save settings</button>
+          <button id="syncNow" class="btn ghost" type="button">Manual sync now</button>
+          <span id="footerStatus" class="status"></span>
+        </div>
       </section>
 
-      <section class="card">
-        <h2>Platforms</h2>
-        <p class="hint">Manual sync will only scrape the socials you tick here. For each one, keep the relevant web tab open and logged in.</p>
-        <div id="platformList" class="list"></div>
-      </section>
+      <section class="layout-grid">
+        <section class="main-column">
+          <section class="card section-card">
+            <div class="section-head">
+              <div>
+                <p class="section-kicker">Connection</p>
+                <h2>Archive endpoint</h2>
+              </div>
+            </div>
+            <label class="field">
+              <span class="label">Where the extension pushes synced data</span>
+              <input id="endpoint" type="url" placeholder="http://localhost:3000/api/archive" />
+            </label>
+            <p class="hint">Keep this pointed at your app while developing. The extension will merge into that archive after each sync.</p>
+          </section>
 
-      <section class="card">
-        <h2>Scheduling</h2>
-        <label class="row checkbox">
-          <input id="enableAutoSync" type="checkbox" />
-          <span>Enable automatic sync</span>
-        </label>
-        <label class="row">
-          <span class="label">Auto-sync interval in minutes</span>
-          <input id="interval" type="number" min="5" max="720" step="5" />
-        </label>
-        <p class="hint">Auto sync is off by default. Manual sync is the primary path for now.</p>
-      </section>
+          <section class="card section-card">
+            <div class="section-head">
+              <div>
+                <p class="section-kicker">Socials</p>
+                <h2>Enabled collectors</h2>
+              </div>
+              <p class="hint">Only selected platforms participate in sync.</p>
+            </div>
+            <div id="platformList" class="platform-list"></div>
+          </section>
+        </section>
 
-      <section class="card">
-        <h2>Last run</h2>
-        <span id="runStatus" class="status">No sync yet.</span>
-      </section>
+        <aside class="side-column">
+          <section class="card side-card">
+            <div class="section-head compact">
+              <div>
+                <p class="section-kicker">Automation</p>
+                <h2>Scheduling</h2>
+              </div>
+            </div>
+            <label class="toggle-row">
+              <input id="enableAutoSync" type="checkbox" />
+              <span>
+                <strong>Enable automatic sync</strong>
+                <small>Off by default. Manual sync remains the primary path.</small>
+              </span>
+            </label>
+            <label class="field">
+              <span class="label">Auto-sync interval in minutes</span>
+              <input id="interval" type="number" min="5" max="720" step="5" />
+            </label>
+          </section>
 
-      <div class="footer">
-        <button id="save" class="btn primary" type="button">Save settings</button>
-        <button id="syncNow" class="btn ghost" type="button">Manual sync now</button>
-        <span id="footerStatus" class="status"></span>
-      </div>
+          <section class="card side-card">
+            <div class="section-head compact">
+              <div>
+                <p class="section-kicker">Runtime</p>
+                <h2>Last run</h2>
+              </div>
+            </div>
+            <div class="runtime-box">
+              <span id="runStatus" class="status">No sync yet.</span>
+            </div>
+          </section>
+
+          <section class="card side-card">
+            <div class="section-head compact">
+              <div>
+                <p class="section-kicker">Instagram</p>
+                <h2>Saved collections</h2>
+              </div>
+            </div>
+            <p class="hint">Use the saved scope dropdown to fetch collections, then choose reel counts per collection.</p>
+          </section>
+        </aside>
+      </section>
     </main>
     <script src="./options.js"></script>
   </body>

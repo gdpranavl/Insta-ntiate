@@ -57,6 +57,7 @@ Optional backend enrichment for:
 - trigger sync on startup, scheduled intervals, or manual action
 - navigate to Instagram saved surfaces in a non-disruptive way
 - extract collection and post metadata
+- hydrate reel detail pages when needed so direct video URLs can be captured before upload
 - cache results locally
 - export structured data for the web app
 
@@ -227,6 +228,7 @@ This lets the web app operate immediately without a backend.
 1. Combine all captured entities into one normalized archive.
 2. Save archive in `chrome.storage.local`.
 3. Expose archive for download from the popup.
+4. When Instagram reel media is available, persist it locally under `public/downloads/instagram-media/` and track the file mapping in the archive.
 
 ## Near-Term Reliability Tactics
 - bound scraping depth tightly

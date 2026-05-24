@@ -44,7 +44,8 @@ async function hydrate() {
   }
 
   const settings = response.settings || {};
-  selectedPlatforms.textContent = (settings.selectedPlatforms || []).join(", ") || "none";
+  const selected = settings.selectedPlatforms || [];
+  selectedPlatforms.textContent = selected.length ? `${selected.length} active` : "none";
 
   const run = response.syncRun;
   if (!run) {
