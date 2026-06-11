@@ -18,7 +18,8 @@ const demoArchive = {
       shortcode: "ABC123",
       canonicalUrl: "https://instagram.com/p/ABC123/",
       creatorHandle: "@studiolens",
-      caption: "Warm terracotta interiors and layered daylight references.",
+      caption: "Warm terracotta interiors and layered daylight references. #interiordesign #terracotta #homedecor",
+      hashtags: ["#interiordesign", "#terracotta", "#homedecor"],
       mediaType: "image",
       thumbnailUrl: "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=900&q=80",
       videoUrl: "",
@@ -29,7 +30,8 @@ const demoArchive = {
       shortcode: "DEF456",
       canonicalUrl: "https://instagram.com/reel/DEF456/",
       creatorHandle: "@packlight",
-      caption: "Mountain cabin reel with packing list overlays and travel hooks.",
+      caption: "Mountain cabin reel with packing list overlays and travel hooks. #travel #packinglist #mountainlife",
+      hashtags: ["#travel", "#packinglist", "#mountainlife"],
       mediaType: "video",
       thumbnailUrl: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
       videoUrl: "https://example.com/demo-video.mp4",
@@ -49,6 +51,7 @@ const demoArchive = {
 export function Dashboard({ initialArchive }) {
   const [archive, setArchive] = useState(initialArchive);
   const [query, setQuery] = useState("");
+  const [mediaFilter, setMediaFilter] = useState("all");
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -90,18 +93,32 @@ export function Dashboard({ initialArchive }) {
   }, [archive]);
 
   const filteredCards = useMemo(() => {
-    const lower = query.trim().toLowerCase();
-    if (!lower) {
-      return cards;
+    let result = cards;
+
+    if (mediaFilter === "reels") {
+      result = result.filter((card) => card.mediaType === "video");
+    } else if (mediaFilter === "posts") {
+      result = result.filter((card) => card.mediaType !== "video");
     }
 
-    return cards.filter((card) =>
-      [card.caption, card.creatorHandle, card.canonicalUrl, ...(card.collections || [])]
+    const lower = query.trim().toLowerCase();
+    if (!lower) {
+      return result;
+    }
+
+    return result.filter((card) =>
+      [
+        card.caption,
+        card.creatorHandle,
+        card.canonicalUrl,
+        ...(card.collections || []),
+        ...(card.hashtags || [])
+      ]
         .join(" ")
         .toLowerCase()
         .includes(lower)
     );
-  }, [cards, query]);
+  }, [cards, query, mediaFilter]);
 
   async function importArchive(event) {
     const [file] = event.target.files || [];
@@ -152,7 +169,7 @@ export function Dashboard({ initialArchive }) {
 
   const postCount = archive?.posts?.length || 0;
   const collectionCount = archive?.collections?.length || 0;
-  const videoCount = (archive?.posts || []).filter((post) => Boolean(post.videoUrl)).length;
+  const reelCount = (archive?.posts || []).filter((post) => post.mediaType === "video").length;
   const syncStamp = archive?.sourceAccount?.lastSyncedAt || archive?.syncRun?.completedAt;
 
   return (
@@ -207,14 +224,14 @@ export function Dashboard({ initialArchive }) {
           </div>
 
           <aside className={styles.heroCard}>
-            <p className={styles.eyebrow}>Current V1 collector</p>
+            <p className={styles.eyebrow}>Current collector limits</p>
             <div className={styles.metricRow}>
               <div>
-                <span className={styles.metricNumber}>2</span>
+                <span className={styles.metricNumber}>20</span>
                 <span className={styles.metricLabel}>Collections scraped</span>
               </div>
               <div>
-                <span className={styles.metricNumber}>5</span>
+                <span className={styles.metricNumber}>25</span>
                 <span className={styles.metricLabel}>Posts per collection</span>
               </div>
             </div>
@@ -259,11 +276,34 @@ export function Dashboard({ initialArchive }) {
               <h3>Your saved posts</h3>
             </div>
             <div className={styles.toolbarActions}>
+              <div className={styles.filterPills}>
+                <button
+                  className={mediaFilter === "all" ? styles.filterPillActive : styles.filterPill}
+                  type="button"
+                  onClick={() => setMediaFilter("all")}
+                >
+                  All
+                </button>
+                <button
+                  className={mediaFilter === "reels" ? styles.filterPillActive : styles.filterPill}
+                  type="button"
+                  onClick={() => setMediaFilter("reels")}
+                >
+                  Reels only
+                </button>
+                <button
+                  className={mediaFilter === "posts" ? styles.filterPillActive : styles.filterPill}
+                  type="button"
+                  onClick={() => setMediaFilter("posts")}
+                >
+                  Posts only
+                </button>
+              </div>
               <input
                 className={styles.searchInput}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search captions, creators, collections..."
+                placeholder="Search captions, creators, #hashtags..."
                 type="search"
               />
               <button className={styles.buttonGhost} type="button" onClick={clearArchive}>
@@ -288,8 +328,8 @@ export function Dashboard({ initialArchive }) {
               <strong>{postCount}</strong>
             </article>
             <article className={styles.summaryCard}>
-              <span className={styles.summaryLabel}>Videos Found</span>
-              <strong>{videoCount}</strong>
+              <span className={styles.summaryLabel}>Reels</span>
+              <strong>{reelCount}</strong>
             </article>
             <article className={styles.summaryCard}>
               <span className={styles.summaryLabel}>Last Sync</span>
@@ -311,6 +351,7 @@ export function Dashboard({ initialArchive }) {
               {filteredCards.map((card) => (
                 <article className={styles.resultCard} key={card.id}>
                   <div className={styles.cardImage}>
+                    {card.mediaType === "video" && <span className={styles.reelBadge}>Reel</span>}
                     {card.thumbnailUrl ? <img src={card.thumbnailUrl} alt={card.caption || "Saved post thumbnail"} /> : null}
                   </div>
                   <div className={styles.cardBody}>
@@ -323,6 +364,20 @@ export function Dashboard({ initialArchive }) {
                     </div>
                     <h4>{card.creatorHandle || "Unknown creator"}</h4>
                     <p className={styles.resultMeta}>{card.caption || "No visible caption captured."}</p>
+                    {(card.hashtags || []).length > 0 && (
+                      <div className={styles.hashtagRow}>
+                        {card.hashtags.slice(0, 8).map((tag) => (
+                          <button
+                            className={styles.hashtagPill}
+                            key={`${card.id}-${tag}`}
+                            type="button"
+                            onClick={() => setQuery(tag)}
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div className={styles.linkRow}>
                       <a className={styles.smallLink} href={card.canonicalUrl} target="_blank" rel="noreferrer">
                         Open Post

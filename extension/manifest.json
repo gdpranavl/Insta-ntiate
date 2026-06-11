@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Harvest top Instagram saved collections into a local searchable archive.",
   "permissions": ["storage", "tabs", "alarms", "scripting"],
-  "host_permissions": ["https://www.instagram.com/*", "http://localhost:3000/*"],
+  "host_permissions": ["https://www.instagram.com/*", "http://localhost/*"],
   "action": {
     "default_title": "Insta-ntiate",
     "default_popup": "popup.html"

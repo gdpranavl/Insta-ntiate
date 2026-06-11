@@ -1,6 +1,6 @@
 const ALARM_NAME = "insta-ntiate-sync";
-const COLLECTION_LIMIT = 2;
-const POSTS_PER_COLLECTION = 5;
+const COLLECTION_LIMIT = 20;
+const POSTS_PER_COLLECTION = 25;
 const DEFAULT_SYNC_MINUTES = 30;
 const DEFAULT_APP_ENDPOINT = "http://localhost:3000/api/archive";
 
