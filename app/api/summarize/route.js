@@ -27,18 +27,20 @@ export async function POST(request) {
           source: { type: "base64", media_type: mediaType, data: b64 },
         });
       }
-    } catch (_error) {
-      // continue without thumbnail
-    }
+    } catch (_error) {}
   }
 
-  const parts = ["This is a saved Instagram reel."];
-  if (post.creatorHandle) parts.push(`Creator: ${post.creatorHandle}`);
-  if (post.caption) parts.push(`Caption: "${post.caption.slice(0, 800)}"`);
-  if (post.hashtags?.length) parts.push(`Hashtags: ${post.hashtags.slice(0, 10).join(" ")}`);
-  parts.push("Write a concise 2-3 sentence summary of what this reel is about.");
+  const lines = [
+    `Analyse this saved Instagram reel. Respond with ONLY valid JSON — no markdown, no extra text — in this exact shape:
+{"summary":"2-3 sentences describing what the reel shows and what it is about. Be direct and descriptive.","tags":["concept1","concept2","concept3","concept4","concept5"]}
 
-  content.push({ type: "text", text: parts.join("\n") });
+Tags should be 5-8 short concept/theme labels (e.g. "morning routine", "travel tips", "yoga", "recipe", "outfit inspo", "productivity", "aesthetic", "fitness", "cooking", "motivation") that let users find this reel by idea, not just keyword.`,
+  ];
+  if (post.creatorHandle) lines.push(`Creator: ${post.creatorHandle}`);
+  if (post.caption) lines.push(`Caption: "${post.caption.slice(0, 800)}"`);
+  if (post.hashtags?.length) lines.push(`Hashtags: ${post.hashtags.slice(0, 10).join(" ")}`);
+
+  content.push({ type: "text", text: lines.join("\n") });
 
   const message = await client.messages.create({
     model: "claude-opus-4-8",
@@ -46,8 +48,19 @@ export async function POST(request) {
     messages: [{ role: "user", content }],
   });
 
-  const summary = message.content[0].text;
-  await patchPost(postId, { summary });
+  let summary = "";
+  let semanticTags = [];
 
-  return NextResponse.json({ summary });
+  try {
+    const raw = message.content[0].text.trim();
+    const parsed = JSON.parse(raw);
+    summary = parsed.summary || "";
+    semanticTags = Array.isArray(parsed.tags) ? parsed.tags.map((t) => String(t).toLowerCase()) : [];
+  } catch (_parseError) {
+    summary = message.content[0].text;
+  }
+
+  await patchPost(postId, { summary, semanticTags });
+
+  return NextResponse.json({ summary, semanticTags });
 }
