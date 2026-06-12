@@ -53,6 +53,7 @@ export function Dashboard({ initialArchive }) {
   const [query, setQuery] = useState("");
   const [mediaFilter, setMediaFilter] = useState("all");
   const [status, setStatus] = useState("");
+  const [summarizing, setSummarizing] = useState(new Set());
 
   useEffect(() => {
     const intervalId = window.setInterval(async () => {
@@ -165,6 +166,34 @@ export function Dashboard({ initialArchive }) {
     });
     setArchive(demoArchive);
     setStatus("Demo archive loaded into the app store.");
+  }
+
+  async function summarizeReel(postId) {
+    setSummarizing((prev) => new Set(prev).add(postId));
+    try {
+      const res = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Summarize failed");
+      setArchive((prev) => {
+        if (!prev?.posts) return prev;
+        return {
+          ...prev,
+          posts: prev.posts.map((p) => (p.id === postId ? { ...p, summary: data.summary } : p)),
+        };
+      });
+    } catch (err) {
+      setStatus(`Could not summarize: ${err.message}`);
+    } finally {
+      setSummarizing((prev) => {
+        const next = new Set(prev);
+        next.delete(postId);
+        return next;
+      });
+    }
   }
 
   const postCount = archive?.posts?.length || 0;
@@ -378,15 +407,26 @@ export function Dashboard({ initialArchive }) {
                         ))}
                       </div>
                     )}
+                    {card.summary && (
+                      <div className={styles.summaryBox}>
+                        <p className={styles.summaryLabel}>AI Summary</p>
+                        <p className={styles.summaryText}>{card.summary}</p>
+                      </div>
+                    )}
                     <div className={styles.linkRow}>
                       <a className={styles.smallLink} href={card.canonicalUrl} target="_blank" rel="noreferrer">
                         Open Post
                       </a>
-                      {card.videoUrl ? (
-                        <a className={styles.smallLink} href={card.videoUrl} target="_blank" rel="noreferrer">
-                          Open Video URL
-                        </a>
-                      ) : null}
+                      {card.mediaType === "video" && (
+                        <button
+                          className={styles.smallLink}
+                          type="button"
+                          disabled={summarizing.has(card.id)}
+                          onClick={() => summarizeReel(card.id)}
+                        >
+                          {summarizing.has(card.id) ? "Summarizing..." : card.summary ? "Re-summarize" : "Summarize"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </article>
