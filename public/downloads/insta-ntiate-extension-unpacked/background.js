@@ -99,9 +99,9 @@ async function runSync(trigger) {
       },
       notes: [
         "This collector is intentionally bounded to the first 20 saved collections and the first 25 posts per collection.",
-        "Each saved item is opened in its own background tab so creator, caption, thumbnail, and video URL can be collected more reliably."
+        "Saved items are scraped one at a time in a single reused background tab, so the sync no longer opens a separate tab per post."
       ],
-      warnings: []
+      warnings: account.errors || []
     };
 
     if (!archive.collections.length) {
@@ -139,19 +139,25 @@ async function runSync(trigger) {
 
 async function scrapeSavedCollections() {
   const username = await checkInstagramLogin();
-  const root = await scrapeSavedOverviewWithFallback(username);
-  const savedTab = root.tab;
+
+  // Reuse ONE background tab for the entire crawl. Previously the collector opened
+  // (and closed) a separate tab for every collection AND every post — up to ~500
+  // tabs per sync, which both looks broken and is very slow. Now a single worker
+  // tab is navigated from page to page.
+  const worker = await createBackgroundTab("about:blank");
+  const errors = [];
 
   try {
+    const root = await scrapeSavedOverview(worker.id, username);
+
     const collections = [];
     const posts = [];
     const memberships = [];
 
     for (const overviewCollection of root.collections || []) {
-      const collectionTab = await createBackgroundTab(overviewCollection.url);
-
       try {
-        const details = await sendTabMessage(collectionTab.id, {
+        await navigateTab(worker.id, overviewCollection.url);
+        const details = await sendTabMessage(worker.id, {
           type: "SCRAPE_COLLECTION_DETAIL",
           collection: overviewCollection,
           postLimit: POSTS_PER_COLLECTION
@@ -165,10 +171,9 @@ async function scrapeSavedCollections() {
         });
 
         for (const postOverview of details.posts || []) {
-          const detailTab = await createBackgroundTab(postOverview.canonicalUrl);
-
           try {
-            const post = await sendTabMessage(detailTab.id, {
+            await navigateTab(worker.id, postOverview.canonicalUrl);
+            const post = await sendTabMessage(worker.id, {
               type: "SCRAPE_POST_DETAIL",
               post: postOverview,
               collectionTitle: details.collection.title
@@ -181,16 +186,14 @@ async function scrapeSavedCollections() {
               rank: post.rank,
               capturedAt: new Date().toISOString()
             });
-          } finally {
-            if (detailTab?.id) {
-              await chrome.tabs.remove(detailTab.id);
-            }
+          } catch (error) {
+            // A single post that fails to scrape must not abort the whole run.
+            errors.push(`post ${postOverview.canonicalUrl}: ${error.message}`);
           }
         }
-      } finally {
-        if (collectionTab?.id) {
-          await chrome.tabs.remove(collectionTab.id);
-        }
+      } catch (error) {
+        // A single collection that fails to open must not abort the whole run.
+        errors.push(`collection ${overviewCollection.url}: ${error.message}`);
       }
     }
 
@@ -198,11 +201,12 @@ async function scrapeSavedCollections() {
       username: root.username,
       collections,
       posts: dedupePosts(posts),
-      memberships
+      memberships,
+      errors
     };
   } finally {
-    if (savedTab?.id) {
-      await chrome.tabs.remove(savedTab.id);
+    if (worker?.id) {
+      await chrome.tabs.remove(worker.id);
     }
   }
 }
@@ -231,7 +235,7 @@ async function checkInstagramLogin() {
   }
 }
 
-async function scrapeSavedOverviewWithFallback(username) {
+async function scrapeSavedOverview(workerTabId, username) {
   const candidateUrls = [
     username ? `https://www.instagram.com/${username}/saved/` : null,
     "https://www.instagram.com/your_activity/interactions/saved/",
@@ -241,24 +245,19 @@ async function scrapeSavedOverviewWithFallback(username) {
   const errors = [];
 
   for (const url of candidateUrls) {
-    const tab = await createBackgroundTab(url);
-
     try {
-      const payload = await sendTabMessage(tab.id, {
+      await navigateTab(workerTabId, url);
+      const payload = await sendTabMessage(workerTabId, {
         type: "SCRAPE_SAVED_OVERVIEW",
         collectionLimit: COLLECTION_LIMIT
       });
 
       return {
         ...payload,
-        username: payload.username || username || "",
-        tab
+        username: payload.username || username || ""
       };
     } catch (error) {
       errors.push(`${url}: ${error.message}`);
-      if (tab?.id) {
-        await chrome.tabs.remove(tab.id);
-      }
     }
   }
 
@@ -267,6 +266,40 @@ async function scrapeSavedOverviewWithFallback(username) {
 
 async function createBackgroundTab(url) {
   return chrome.tabs.create({ url, active: false });
+}
+
+function navigateTab(tabId, url) {
+  // Navigate an existing background tab and resolve once the new page has loaded.
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const settle = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(listener);
+      setTimeout(resolve, 1500);
+    };
+
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === "complete") {
+        settle();
+      }
+    };
+
+    chrome.tabs.onUpdated.addListener(listener);
+
+    chrome.tabs.update(tabId, { url }, () => {
+      if (chrome.runtime.lastError) {
+        settled = true;
+        chrome.tabs.onUpdated.removeListener(listener);
+        reject(new Error(chrome.runtime.lastError.message));
+      }
+    });
+
+    setTimeout(settle, 12000);
+  });
 }
 
 async function sendTabMessage(tabId, message) {

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-06-16 — Extension: stop opening a tab per saved post
+
+### Fixed
+- The collector opened a brand-new background tab for every collection and every
+  post — up to ~500 tabs per sync, which is slow and looks broken. It now reuses a
+  single background "worker" tab, navigating it from page to page (`navigateTab`).
+- A collection or post that fails to scrape is now skipped and recorded as a
+  warning instead of aborting the whole sync.
+- Rebuilt both packaged extension copies and zips.
+
+### Verified
+- Full web-app test pass: 14/14 API checks (including live Claude search and
+  image-summarize) and 7/7 dashboard UI interactions, with no console errors.
+
 ## 2026-06-15 — Monochrome (black & white) theme
 
 ### Changed
