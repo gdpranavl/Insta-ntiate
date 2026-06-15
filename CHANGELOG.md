@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-06-15 — Monochrome (black & white) theme
+
+### Changed
+- Recolored the entire web UI to black & white. `globals.css` now uses a white
+  background (removed the warm cream/teal/orange gradient wash) and grayscale theme
+  variables; `page.module.css` had 52 teal/orange/amber/red values replaced with
+  grayscale equivalents (buttons, tabs, chips, the AI search bar, reel badges, stat
+  bars, banners). Saved post thumbnails stay in color — they are archived content.
+- Recolored the app icon to black & white (black squircle, white "i"/ribbon/spark);
+  re-rendered the extension PNGs and rebuilt both packaged copies + zips.
+- The in-app header logo now renders the icon (`app/icon.svg`) instead of the old
+  "IN" gradient badge.
+
 ## 2026-06-15 — Branding: app icon & README
 
 ### Added

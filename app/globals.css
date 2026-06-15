@@ -1,14 +1,14 @@
 :root {
-  --bg: #f5efe6;
-  --panel: rgba(255, 252, 247, 0.84);
-  --panel-strong: #fffaf2;
-  --line: rgba(31, 24, 16, 0.1);
-  --ink: #1f1810;
-  --muted: #65594d;
-  --accent: #0f766e;
-  --accent-strong: #115e59;
-  --accent-warm: #ea580c;
-  --shadow: 0 28px 90px rgba(74, 48, 17, 0.12);
+  --bg: #ffffff;
+  --panel: rgba(255, 255, 255, 0.84);
+  --panel-strong: #ffffff;
+  --line: rgba(0, 0, 0, 0.12);
+  --ink: #0f0f0f;
+  --muted: #6b6b6b;
+  --accent: #111111;
+  --accent-strong: #000000;
+  --accent-warm: #111111;
+  --shadow: 0 28px 90px rgba(0, 0, 0, 0.1);
   --radius-xl: 30px;
   --radius-lg: 22px;
   --radius-md: 16px;
@@ -24,10 +24,7 @@ body {
   min-height: 100%;
   font-family: Arial, sans-serif;
   color: var(--ink);
-  background:
-    radial-gradient(circle at top left, rgba(234, 88, 12, 0.17), transparent 22%),
-    radial-gradient(circle at top right, rgba(15, 118, 110, 0.17), transparent 24%),
-    linear-gradient(180deg, #f9f4ed 0%, var(--bg) 56%, #efe5d8 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #fafafa 60%, #f3f3f3 100%);
 }
 
 body::before {
@@ -35,8 +32,8 @@ body::before {
   position: fixed;
   inset: 0;
   background-image:
-    linear-gradient(rgba(31, 24, 16, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(31, 24, 16, 0.035) 1px, transparent 1px);
+    linear-gradient(rgba(0, 0, 0, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.035) 1px, transparent 1px);
   background-size: 42px 42px;
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.6), transparent 90%);
   pointer-events: none;

@@ -352,7 +352,7 @@ export function Dashboard({ initialArchive }) {
       <header className={styles.hero}>
         <nav className={styles.topbar}>
           <div className={styles.brand}>
-            <span className={styles.brandMark}>IN</span>
+            <img className={styles.brandMark} src="/icon.svg" alt="Insta-ntiate" width={52} height={52} />
             <div>
               <p className={styles.eyebrow}>Saved Search Layer</p>
               <h1>Insta-ntiate</h1>
