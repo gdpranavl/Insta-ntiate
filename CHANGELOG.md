@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-06-15
+
+### Added
+- **AI natural language search** — orange search bar below the main toolbar. Describe what you want in plain English; Claude Haiku ranks matching posts. Robust parsing strips markdown fences and validates all returned IDs against the live archive so hallucinated IDs never surface.
+- **Collection filter** — dropdown next to creator filter; filters cards to a single saved collection using existing membership data (was always available in the data, just had no UI).
+- **Find Similar** — "Similar" button on each card; finds posts with overlapping semantic tags sorted by match count. Exit via the banner button.
+- **Personal notes** — "Add note" / "Edit note" inline textarea per card; saved to the archive via `/api/notes` and persisted in `data/archive.json`.
+- **Date range filter** — From/To date pickers filter cards by their `capturedAt` timestamp.
+- **Export filtered results** — Export JSON and Export CSV buttons download the current filtered view (respects AI search, similar mode, and all other active filters).
+- **Stats tab** — Archive / Stats tab pair. Stats panel shows total count, reels vs static breakdown, unique creators, top-10 creators by post count, top-15 hashtags, and top-15 AI semantic topics as horizontal bar charts.
+- **Context-aware empty states** — distinct messages for: no archive, no AI matches, no similar posts, no keyword matches.
+- `POST /api/search` — natural language search route using Claude Haiku; returns post IDs ranked by relevance.
+- `POST /api/notes` — saves a personal note to a post via `patchPost`.
+
+### Fixed
+- **Extension saved-posts bug** — removed hardcoded `thegdpranavl/saved/` URL from the sync candidate list. Anyone not logged in as that account would fail on the first attempt every time. New order: `your_activity/interactions/saved/` first (correct modern URL), then `/saved/` as legacy fallback.
+- **Extension default endpoint** — changed from `localhost:3000` to `localhost:3001` to match the actual Next.js dev server port.
+- **Extension manifest host permissions** — added `localhost:3001` and `localhost:3002` so the extension can push regardless of which port Next.js picks.
+- **Keyword search now includes notes** — personal note text is included in the keyword search index.
+- **Search/sort disabled in AI and similar modes** — keyword input and sort dropdown grey out to avoid confusing mixed-state results.
+
 ## 2026-05-24
 
 ### Fixed

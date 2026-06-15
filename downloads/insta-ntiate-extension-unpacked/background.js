@@ -1,9 +1,8 @@
 const ALARM_NAME = "insta-ntiate-sync";
 const COLLECTION_LIMIT = 2;
 const POSTS_PER_COLLECTION = 5;
-const HARDCODED_USERNAME = "thegdpranavl";
 const DEFAULT_SYNC_MINUTES = 30;
-const DEFAULT_APP_ENDPOINT = "http://localhost:3000/api/archive";
+const DEFAULT_APP_ENDPOINT = "http://localhost:3001/api/archive";
 
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureSettings();
@@ -76,7 +75,7 @@ async function runSync(trigger) {
     const account = await scrapeSavedCollections();
     const archive = {
       sourceAccount: {
-        username: account.username || HARDCODED_USERNAME,
+        username: account.username || "unknown",
         lastSyncedAt: new Date().toISOString()
       },
       syncRun: {
@@ -93,7 +92,6 @@ async function runSync(trigger) {
       },
       notes: [
         "This collector is intentionally bounded to the first two collections and first five posts per collection.",
-        `Saved route is currently hard-coded to @${HARDCODED_USERNAME} for debugging.`,
         "Each saved item is opened in its own background tab so creator, caption, thumbnail, and video URL can be collected more reliably."
       ],
       warnings: []
@@ -203,7 +201,6 @@ async function scrapeSavedCollections() {
 
 async function scrapeSavedOverviewWithFallback() {
   const candidateUrls = [
-    `https://www.instagram.com/${HARDCODED_USERNAME}/saved/`,
     "https://www.instagram.com/your_activity/interactions/saved/",
     "https://www.instagram.com/saved/"
   ];
@@ -221,7 +218,7 @@ async function scrapeSavedOverviewWithFallback() {
 
       return {
         ...payload,
-        username: payload.username || HARDCODED_USERNAME,
+        username: payload.username || "",
         tab
       };
     } catch (error) {

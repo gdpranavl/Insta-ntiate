@@ -24,13 +24,7 @@
           <button id="save-interval-button" class="secondary" type="button">Save Timer</button>
         </div>
         <p class="detail">Runs on Chrome startup and then on this repeating interval while Chrome is open.</p>
-
-        <p class="status-label" style="margin-top:12px">App endpoint</p>
-        <div class="interval-row">
-          <input id="endpoint-input" type="url" placeholder="http://localhost:3000/api/archive" style="flex:1;font-size:11px" />
-          <button id="save-endpoint-button" class="secondary" type="button">Save</button>
-        </div>
-        <p class="detail">Change this if the Next.js app is running on a different port (e.g. 3001).</p>
+        <p class="detail">Successful syncs are pushed to `http://localhost:3001/api/archive` by default.</p>
       </section>
 
       <div class="status-card">

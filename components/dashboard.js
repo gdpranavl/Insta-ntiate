@@ -39,28 +39,48 @@ const demoArchive = {
 };
 
 export function Dashboard({ initialArchive }) {
+  // ── Core state ──
   const [archive, setArchive] = useState(initialArchive);
-  const [query, setQuery] = useState("");
-  const [mediaFilter, setMediaFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("newest");
-  const [creatorFilter, setCreatorFilter] = useState("");
-  const [activeTopicTag, setActiveTopicTag] = useState("");
   const [status, setStatus] = useState("");
   const [summarizing, setSummarizing] = useState(new Set());
   const [bulkProgress, setBulkProgress] = useState(null);
 
+  // ── Filter state ──
+  const [query, setQuery] = useState("");
+  const [mediaFilter, setMediaFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
+  const [creatorFilter, setCreatorFilter] = useState("");
+  const [collectionFilter, setCollectionFilter] = useState("");
+  const [activeTopicTag, setActiveTopicTag] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  // ── AI search state ──
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiMode, setAiMode] = useState(false);
+  const [aiSearching, setAiSearching] = useState(false);
+  const [aiResultIds, setAiResultIds] = useState(null);
+
+  // ── View / UX state ──
+  const [activeView, setActiveView] = useState("archive");
+  const [similarBase, setSimilarBase] = useState(null);
+  const [noteEditId, setNoteEditId] = useState(null);
+  const [noteDraft, setNoteDraft] = useState("");
+
+  // ── Poll for archive updates every 4s ──
   useEffect(() => {
-    const intervalId = window.setInterval(async () => {
+    const id = window.setInterval(async () => {
       try {
-        const response = await fetch("/api/archive", { cache: "no-store" });
-        if (!response.ok) return;
-        const payload = await response.json();
-        if (payload.archive) setArchive(payload.archive);
-      } catch (_error) {}
+        const res = await fetch("/api/archive", { cache: "no-store" });
+        if (!res.ok) return;
+        const { archive: next } = await res.json();
+        if (next) setArchive(next);
+      } catch {}
     }, 4000);
-    return () => window.clearInterval(intervalId);
+    return () => window.clearInterval(id);
   }, []);
 
+  // ── Derived data ──
   const cards = useMemo(() => {
     const collections = archive?.collections || [];
     const posts = archive?.posts || [];
@@ -81,6 +101,10 @@ export function Dashboard({ initialArchive }) {
     return [...new Set(handles)].sort();
   }, [cards]);
 
+  const collectionTitles = useMemo(() => {
+    return [...new Set((archive?.collections || []).map((c) => c.title).filter(Boolean))].sort();
+  }, [archive]);
+
   const topicTags = useMemo(() => {
     const freq = {};
     for (const card of cards) {
@@ -88,31 +112,44 @@ export function Dashboard({ initialArchive }) {
         freq[tag] = (freq[tag] || 0) + 1;
       }
     }
-    return Object.entries(freq)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 16)
-      .map(([tag]) => tag);
+    return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 16).map(([tag]) => tag);
   }, [cards]);
 
   const filteredCards = useMemo(() => {
+    // Similar mode overrides everything
+    if (similarBase) {
+      const baseTags = new Set(similarBase.semanticTags || []);
+      return cards
+        .filter((c) => c.id !== similarBase.id && (c.semanticTags || []).some((t) => baseTags.has(t)))
+        .map((c) => ({ ...c, _sim: (c.semanticTags || []).filter((t) => baseTags.has(t)).length }))
+        .sort((a, b) => b._sim - a._sim);
+    }
+
+    // AI search mode overrides sort/keyword filter
+    if (aiMode && aiResultIds) {
+      const idOrder = new Map(aiResultIds.map((id, i) => [id, i]));
+      return cards
+        .filter((c) => idOrder.has(c.id))
+        .sort((a, b) => (idOrder.get(a.id) ?? 999) - (idOrder.get(b.id) ?? 999));
+    }
+
     let result = cards;
 
     if (mediaFilter === "reels") result = result.filter((c) => c.mediaType === "video");
     else if (mediaFilter === "posts") result = result.filter((c) => c.mediaType !== "video");
 
     if (creatorFilter) result = result.filter((c) => c.creatorHandle === creatorFilter);
+    if (collectionFilter) result = result.filter((c) => (c.collections || []).includes(collectionFilter));
+    if (activeTopicTag) result = result.filter((c) => (c.semanticTags || []).includes(activeTopicTag));
 
-    if (activeTopicTag) {
-      result = result.filter((c) => (c.semanticTags || []).includes(activeTopicTag));
-    }
+    if (dateFrom) result = result.filter((c) => c.capturedAt && c.capturedAt >= dateFrom);
+    if (dateTo) result = result.filter((c) => c.capturedAt && c.capturedAt <= dateTo + "T23:59:59");
 
     const lower = query.trim().toLowerCase();
     if (lower) {
       result = result.filter((c) =>
-        [c.caption, c.creatorHandle, c.canonicalUrl, ...(c.collections || []), ...(c.hashtags || []), ...(c.semanticTags || [])]
-          .join(" ")
-          .toLowerCase()
-          .includes(lower)
+        [c.caption, c.creatorHandle, c.canonicalUrl, ...(c.collections || []), ...(c.hashtags || []), ...(c.semanticTags || []), c.note || ""]
+          .join(" ").toLowerCase().includes(lower)
       );
     }
 
@@ -122,23 +159,45 @@ export function Dashboard({ initialArchive }) {
     else if (sortBy === "creator") result.sort((a, b) => (a.creatorHandle || "").localeCompare(b.creatorHandle || ""));
 
     return result;
-  }, [cards, query, mediaFilter, creatorFilter, activeTopicTag, sortBy]);
+  }, [cards, query, mediaFilter, creatorFilter, collectionFilter, activeTopicTag, sortBy, aiMode, aiResultIds, dateFrom, dateTo, similarBase]);
 
+  const stats = useMemo(() => {
+    if (!cards.length) return null;
+    const creatorCounts = {};
+    const hashtagCounts = {};
+    const tagCounts = {};
+    let reels = 0, posts = 0;
+    for (const c of cards) {
+      if (c.mediaType === "video") reels++; else posts++;
+      if (c.creatorHandle) creatorCounts[c.creatorHandle] = (creatorCounts[c.creatorHandle] || 0) + 1;
+      for (const h of (c.hashtags || [])) hashtagCounts[h] = (hashtagCounts[h] || 0) + 1;
+      for (const t of (c.semanticTags || [])) tagCounts[t] = (tagCounts[t] || 0) + 1;
+    }
+    return {
+      reels,
+      posts,
+      topCreators: Object.entries(creatorCounts).sort((a, b) => b[1] - a[1]).slice(0, 10),
+      topHashtags: Object.entries(hashtagCounts).sort((a, b) => b[1] - a[1]).slice(0, 15),
+      topTags: Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 15),
+    };
+  }, [cards]);
+
+  // ── Actions ──
   async function importArchive(event) {
     const [file] = event.target.files || [];
     if (!file) return;
     try {
       const text = await file.text();
       const nextArchive = JSON.parse(text);
-      const response = await fetch("/api/archive", {
+      const res = await fetch("/api/archive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nextArchive),
       });
-      if (!response.ok) throw new Error("Upload failed");
+      if (!res.ok) throw new Error("Upload failed");
       setArchive(nextArchive);
       setStatus("Archive imported.");
-    } catch (_error) {
+    } catch {
       setStatus("Could not import that archive JSON.");
     }
   }
@@ -148,7 +207,14 @@ export function Dashboard({ initialArchive }) {
     setArchive(null);
     setQuery("");
     setCreatorFilter("");
+    setCollectionFilter("");
     setActiveTopicTag("");
+    setAiMode(false);
+    setAiResultIds(null);
+    setAiQuery("");
+    setSimilarBase(null);
+    setDateFrom("");
+    setDateTo("");
     setStatus("Stored archive cleared.");
   }
 
@@ -172,23 +238,16 @@ export function Dashboard({ initialArchive }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Summarize failed");
-      setArchive((prev) => {
-        if (!prev?.posts) return prev;
-        return {
-          ...prev,
-          posts: prev.posts.map((p) =>
-            p.id === postId ? { ...p, summary: data.summary, semanticTags: data.semanticTags || p.semanticTags } : p
-          ),
-        };
-      });
+      setArchive((prev) => ({
+        ...prev,
+        posts: prev.posts.map((p) =>
+          p.id === postId ? { ...p, summary: data.summary, semanticTags: data.semanticTags || p.semanticTags } : p
+        ),
+      }));
     } catch (err) {
       setStatus(`Could not summarize: ${err.message}`);
     } finally {
-      setSummarizing((prev) => {
-        const next = new Set(prev);
-        next.delete(postId);
-        return next;
-      });
+      setSummarizing((prev) => { const next = new Set(prev); next.delete(postId); return next; });
     }
   }
 
@@ -202,6 +261,69 @@ export function Dashboard({ initialArchive }) {
     }
     setBulkProgress(null);
     setStatus(`Summarized ${toProcess.length} reels.`);
+  }
+
+  async function runAiSearch() {
+    if (!aiQuery.trim() || aiSearching) return;
+    setAiSearching(true);
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: aiQuery }),
+      });
+      const data = await res.json();
+      setAiResultIds(data.ids || []);
+      setAiMode(true);
+    } catch (err) {
+      setStatus(`AI search failed: ${err.message}`);
+    } finally {
+      setAiSearching(false);
+    }
+  }
+
+  function clearAiSearch() {
+    setAiMode(false);
+    setAiResultIds(null);
+    setAiQuery("");
+  }
+
+  async function saveNote(postId) {
+    await fetch("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ postId, note: noteDraft }),
+    });
+    setArchive((prev) => ({
+      ...prev,
+      posts: prev.posts.map((p) => p.id === postId ? { ...p, note: noteDraft } : p),
+    }));
+    setNoteEditId(null);
+  }
+
+  function startEditNote(card) {
+    setNoteEditId(card.id);
+    setNoteDraft(card.note || "");
+  }
+
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify(filteredCards, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "insta-ntiate-export.json"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportCSV() {
+    const cols = ["id", "creatorHandle", "mediaType", "caption", "hashtags", "semanticTags", "summary", "note", "capturedAt", "canonicalUrl"];
+    const rows = filteredCards.map((c) =>
+      cols.map((k) => `"${String(Array.isArray(c[k]) ? c[k].join(";") : c[k] || "").replace(/"/g, '""')}"`).join(",")
+    );
+    const blob = new Blob([[cols.join(","), ...rows].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "insta-ntiate-export.csv"; a.click();
+    URL.revokeObjectURL(url);
   }
 
   const postCount = archive?.posts?.length || 0;
@@ -271,189 +393,431 @@ export function Dashboard({ initialArchive }) {
 
       <main>
         <section className={styles.panel}>
-          <div className={styles.toolbar}>
-            <div className={styles.toolbarLeft}>
-              <p className={styles.sectionTag}>Archive</p>
-              <h3>Your saved posts</h3>
-            </div>
-            <div className={styles.toolbarActions}>
-              <div className={styles.filterPills}>
-                {["all", "reels", "posts"].map((f) => (
-                  <button
-                    key={f}
-                    className={mediaFilter === f ? styles.filterPillActive : styles.filterPill}
-                    type="button"
-                    onClick={() => setMediaFilter(f)}
+          <div className={styles.tabRow}>
+            <button
+              className={activeView === "archive" ? styles.tabActive : styles.tab}
+              type="button"
+              onClick={() => setActiveView("archive")}
+            >
+              Archive
+            </button>
+            <button
+              className={activeView === "stats" ? styles.tabActive : styles.tab}
+              type="button"
+              onClick={() => setActiveView("stats")}
+            >
+              Stats
+            </button>
+          </div>
+
+          {activeView === "archive" && (
+            <>
+              <div className={styles.toolbar}>
+                <div className={styles.toolbarLeft}>
+                  <p className={styles.sectionTag}>Archive</p>
+                  <h3>Your saved posts</h3>
+                </div>
+                <div className={styles.toolbarActions}>
+                  <div className={styles.filterPills}>
+                    {["all", "reels", "posts"].map((f) => (
+                      <button
+                        key={f}
+                        className={mediaFilter === f ? styles.filterPillActive : styles.filterPill}
+                        type="button"
+                        onClick={() => setMediaFilter(f)}
+                      >
+                        {f === "all" ? "All" : f === "reels" ? "Reels" : "Posts"}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    className={styles.searchInput}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search captions, creators, topics..."
+                    type="search"
+                    disabled={aiMode || !!similarBase}
+                  />
+
+                  <select
+                    className={styles.selectControl}
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    disabled={aiMode || !!similarBase}
                   >
-                    {f === "all" ? "All" : f === "reels" ? "Reels only" : "Posts only"}
-                  </button>
-                ))}
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="creator">By creator</option>
+                  </select>
+
+                  {creators.length > 0 && (
+                    <select
+                      className={styles.selectControl}
+                      value={creatorFilter}
+                      onChange={(e) => setCreatorFilter(e.target.value)}
+                    >
+                      <option value="">All creators</option>
+                      {creators.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  )}
+
+                  {collectionTitles.length > 0 && (
+                    <select
+                      className={styles.selectControl}
+                      value={collectionFilter}
+                      onChange={(e) => setCollectionFilter(e.target.value)}
+                    >
+                      <option value="">All collections</option>
+                      {collectionTitles.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  )}
+
+                  <button className={styles.buttonGhost} type="button" onClick={clearArchive}>Clear</button>
+                </div>
               </div>
 
-              <input
-                className={styles.searchInput}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search captions, creators, topics..."
-                type="search"
-              />
+              {/* Date range + Export row */}
+              <div className={styles.toolRow}>
+                <div className={styles.dateRange}>
+                  <span className={styles.dateLabel}>From</span>
+                  <input
+                    className={styles.dateInput}
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                  />
+                  <span className={styles.dateLabel}>to</span>
+                  <input
+                    className={styles.dateInput}
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                  />
+                  {(dateFrom || dateTo) && (
+                    <button className={styles.clearBtn} type="button" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+                      × clear dates
+                    </button>
+                  )}
+                </div>
+                <div className={styles.exportBtns}>
+                  <button className={styles.exportBtn} type="button" onClick={exportJSON} disabled={!filteredCards.length}>
+                    Export JSON
+                  </button>
+                  <button className={styles.exportBtn} type="button" onClick={exportCSV} disabled={!filteredCards.length}>
+                    Export CSV
+                  </button>
+                </div>
+              </div>
 
-              <select
-                className={styles.selectControl}
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-              >
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="creator">By creator</option>
-              </select>
-
-              {creators.length > 0 && (
-                <select
-                  className={styles.selectControl}
-                  value={creatorFilter}
-                  onChange={(e) => setCreatorFilter(e.target.value)}
+              {/* AI Search bar */}
+              <div className={styles.aiSearchBar}>
+                <input
+                  className={styles.aiSearchInput}
+                  value={aiQuery}
+                  onChange={(e) => setAiQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && runAiSearch()}
+                  placeholder="AI search: describe what you're looking for — e.g. travel reels from beaches…"
+                  type="text"
+                  disabled={!!similarBase}
+                />
+                <button
+                  className={styles.aiSearchBtn}
+                  type="button"
+                  onClick={runAiSearch}
+                  disabled={aiSearching || !aiQuery.trim() || !!similarBase}
                 >
-                  <option value="">All creators</option>
-                  {creators.map((c) => (
-                    <option key={c} value={c}>{c}</option>
+                  {aiSearching ? "Searching…" : "AI Search"}
+                </button>
+                {aiMode && (
+                  <button className={styles.clearBtn} type="button" onClick={clearAiSearch}>
+                    × clear
+                  </button>
+                )}
+              </div>
+
+              {/* Topic cloud */}
+              {topicTags.length > 0 && (
+                <div className={styles.topicCloud}>
+                  <span className={styles.topicCloudLabel}>Topics</span>
+                  {topicTags.map((tag) => (
+                    <button
+                      key={tag}
+                      className={activeTopicTag === tag ? styles.topicChipActive : styles.topicChip}
+                      type="button"
+                      onClick={() => setActiveTopicTag(activeTopicTag === tag ? "" : tag)}
+                    >
+                      {tag}
+                    </button>
                   ))}
-                </select>
+                </div>
               )}
 
-              <button className={styles.buttonGhost} type="button" onClick={clearArchive}>Clear</button>
-            </div>
-          </div>
+              {/* Context banners */}
+              {similarBase && (
+                <div className={styles.ctxBanner}>
+                  <span>Posts similar to <strong>{similarBase.creatorHandle || similarBase.id}</strong></span>
+                  <button className={styles.clearBtn} type="button" onClick={() => setSimilarBase(null)}>
+                    × back to all
+                  </button>
+                </div>
+              )}
+              {aiMode && aiResultIds && (
+                <div className={styles.ctxBannerOrange}>
+                  <span>AI found <strong>{filteredCards.length}</strong> posts matching "{aiQuery}"</span>
+                </div>
+              )}
 
-          {topicTags.length > 0 && (
-            <div className={styles.topicCloud}>
-              <span className={styles.topicCloudLabel}>Topics</span>
-              {topicTags.map((tag) => (
-                <button
-                  key={tag}
-                  className={activeTopicTag === tag ? styles.topicChipActive : styles.topicChip}
-                  type="button"
-                  onClick={() => setActiveTopicTag(activeTopicTag === tag ? "" : tag)}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
+              <div className={styles.storageNote}>
+                <div className={styles.storageNoteInner}>
+                  <p>{status || "The app reads the latest archive from its local API store. New syncs appear automatically."}</p>
+                  {unsummarizedCount > 0 && (
+                    <button
+                      className={styles.bulkButton}
+                      type="button"
+                      disabled={bulkProgress !== null}
+                      onClick={bulkSummarize}
+                    >
+                      {bulkProgress
+                        ? `Summarizing ${bulkProgress.done} / ${bulkProgress.total}…`
+                        : `Summarize all reels (${unsummarizedCount} remaining)`}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className={styles.summaryGrid}>
+                <article className={styles.summaryCard}>
+                  <span className={styles.summaryLabel}>Collections</span>
+                  <strong>{collectionCount}</strong>
+                </article>
+                <article className={styles.summaryCard}>
+                  <span className={styles.summaryLabel}>Posts</span>
+                  <strong>{postCount}</strong>
+                </article>
+                <article className={styles.summaryCard}>
+                  <span className={styles.summaryLabel}>Reels</span>
+                  <strong>{reelCount}</strong>
+                </article>
+                <article className={styles.summaryCard}>
+                  <span className={styles.summaryLabel}>Last Sync</span>
+                  <strong>{syncStamp ? formatDate(syncStamp) : "Waiting for sync"}</strong>
+                </article>
+              </div>
+
+              {!archive || filteredCards.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <h4>
+                    {!archive
+                      ? "No archive synced yet"
+                      : aiMode
+                      ? "No AI matches found"
+                      : similarBase
+                      ? "No similar posts found"
+                      : "No matching posts"}
+                  </h4>
+                  <p>
+                    {!archive
+                      ? "Run a sync from the extension. This page will update once data arrives."
+                      : aiMode
+                      ? "Try rephrasing your query — e.g. be more specific about the topic or creator."
+                      : similarBase
+                      ? "This post has no overlapping semantic tags with others. Try summarizing more reels first."
+                      : "Try a different search term, filter, or topic tag."}
+                  </p>
+                </div>
+              ) : (
+                <div className={styles.resultsGrid}>
+                  {filteredCards.map((card) => (
+                    <article className={styles.resultCard} key={card.id}>
+                      <div className={styles.cardImage}>
+                        {card.mediaType === "video" && <span className={styles.reelBadge}>Reel</span>}
+                        {card.thumbnailUrl ? <img src={card.thumbnailUrl} alt={card.caption || "Saved post thumbnail"} /> : null}
+                      </div>
+                      <div className={styles.cardBody}>
+                        <div className={styles.chipRow}>
+                          {(card.collections || []).map((col) => (
+                            <span className={styles.chip} key={`${card.id}-${col}`}>{col}</span>
+                          ))}
+                        </div>
+                        <h4>{card.creatorHandle || "Unknown creator"}</h4>
+                        <p className={styles.resultMeta}>{card.caption || "No caption captured."}</p>
+
+                        {(card.hashtags || []).length > 0 && (
+                          <div className={styles.hashtagRow}>
+                            {card.hashtags.slice(0, 6).map((tag) => (
+                              <button className={styles.hashtagPill} key={`${card.id}-${tag}`} type="button" onClick={() => setQuery(tag)}>
+                                {tag}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {(card.semanticTags || []).length > 0 && (
+                          <div className={styles.semanticTagRow}>
+                            {card.semanticTags.map((tag) => (
+                              <button
+                                className={activeTopicTag === tag ? styles.semanticTagActive : styles.semanticTag}
+                                key={`${card.id}-st-${tag}`}
+                                type="button"
+                                onClick={() => setActiveTopicTag(activeTopicTag === tag ? "" : tag)}
+                              >
+                                {tag}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {card.summary && (
+                          <div className={styles.summaryBox}>
+                            <p className={styles.summaryBoxLabel}>AI Summary</p>
+                            <p className={styles.summaryText}>{card.summary}</p>
+                          </div>
+                        )}
+
+                        {noteEditId === card.id ? (
+                          <div className={styles.noteEditor}>
+                            <textarea
+                              className={styles.noteTextarea}
+                              value={noteDraft}
+                              onChange={(e) => setNoteDraft(e.target.value)}
+                              placeholder="Add your note…"
+                              rows={3}
+                              autoFocus
+                            />
+                            <div className={styles.noteActions}>
+                              <button className={styles.noteSave} type="button" onClick={() => saveNote(card.id)}>Save</button>
+                              <button className={styles.noteCancel} type="button" onClick={() => setNoteEditId(null)}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : card.note ? (
+                          <div className={styles.noteBox}>
+                            <p className={styles.noteBoxLabel}>Your note</p>
+                            <p className={styles.noteText}>{card.note}</p>
+                          </div>
+                        ) : null}
+
+                        <div className={styles.linkRow}>
+                          <a className={styles.smallLink} href={card.canonicalUrl} target="_blank" rel="noreferrer">
+                            Open Post
+                          </a>
+                          {card.mediaType === "video" && (
+                            <button
+                              className={styles.smallLink}
+                              type="button"
+                              disabled={summarizing.has(card.id)}
+                              onClick={() => summarizeReel(card.id)}
+                            >
+                              {summarizing.has(card.id) ? "Summarizing…" : card.summary ? "Re-summarize" : "Summarize"}
+                            </button>
+                          )}
+                          {(card.semanticTags || []).length > 0 && (
+                            <button
+                              className={styles.smallLink}
+                              type="button"
+                              onClick={() => setSimilarBase(card)}
+                            >
+                              Similar
+                            </button>
+                          )}
+                          <button
+                            className={styles.smallLink}
+                            type="button"
+                            onClick={() => startEditNote(card)}
+                          >
+                            {card.note ? "Edit note" : "Add note"}
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
-          <div className={styles.storageNote}>
-            <div className={styles.storageNoteInner}>
-              <p>{status || "The app reads the latest archive from its local API store. New syncs appear automatically."}</p>
-              {unsummarizedCount > 0 && (
-                <button
-                  className={styles.bulkButton}
-                  type="button"
-                  disabled={bulkProgress !== null}
-                  onClick={bulkSummarize}
-                >
-                  {bulkProgress
-                    ? `Summarizing ${bulkProgress.done} / ${bulkProgress.total}...`
-                    : `Summarize all reels (${unsummarizedCount} remaining)`}
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className={styles.summaryGrid}>
-            <article className={styles.summaryCard}>
-              <span className={styles.summaryLabel}>Collections</span>
-              <strong>{collectionCount}</strong>
-            </article>
-            <article className={styles.summaryCard}>
-              <span className={styles.summaryLabel}>Posts</span>
-              <strong>{postCount}</strong>
-            </article>
-            <article className={styles.summaryCard}>
-              <span className={styles.summaryLabel}>Reels</span>
-              <strong>{reelCount}</strong>
-            </article>
-            <article className={styles.summaryCard}>
-              <span className={styles.summaryLabel}>Last Sync</span>
-              <strong>{syncStamp ? formatDate(syncStamp) : "Waiting for sync"}</strong>
-            </article>
-          </div>
-
-          {!archive || filteredCards.length === 0 ? (
-            <div className={styles.emptyState}>
-              <h4>{archive ? "No matching posts" : "No archive synced yet"}</h4>
-              <p>
-                {archive
-                  ? "Try a different search term, filter, or topic tag."
-                  : "Run a sync from the extension. This page will update once data arrives."}
-              </p>
-            </div>
-          ) : (
-            <div className={styles.resultsGrid}>
-              {filteredCards.map((card) => (
-                <article className={styles.resultCard} key={card.id}>
-                  <div className={styles.cardImage}>
-                    {card.mediaType === "video" && <span className={styles.reelBadge}>Reel</span>}
-                    {card.thumbnailUrl ? <img src={card.thumbnailUrl} alt={card.caption || "Saved post thumbnail"} /> : null}
+          {activeView === "stats" && (
+            <div className={styles.statsPanel}>
+              {!stats ? (
+                <div className={styles.emptyState}>
+                  <h4>No data yet</h4>
+                  <p>Sync or load demo data first to see stats.</p>
+                </div>
+              ) : (
+                <>
+                  <div className={styles.summaryGrid} style={{ marginTop: 24 }}>
+                    <article className={styles.summaryCard}>
+                      <span className={styles.summaryLabel}>Total Posts</span>
+                      <strong>{stats.posts + stats.reels}</strong>
+                    </article>
+                    <article className={styles.summaryCard}>
+                      <span className={styles.summaryLabel}>Reels</span>
+                      <strong>{stats.reels}</strong>
+                    </article>
+                    <article className={styles.summaryCard}>
+                      <span className={styles.summaryLabel}>Static Posts</span>
+                      <strong>{stats.posts}</strong>
+                    </article>
+                    <article className={styles.summaryCard}>
+                      <span className={styles.summaryLabel}>Unique Creators</span>
+                      <strong>{stats.topCreators.length}</strong>
+                    </article>
                   </div>
-                  <div className={styles.cardBody}>
-                    <div className={styles.chipRow}>
-                      {(card.collections || []).map((col) => (
-                        <span className={styles.chip} key={`${card.id}-${col}`}>{col}</span>
-                      ))}
+
+                  <div className={styles.statsGrid}>
+                    <div className={styles.statSection}>
+                      <h4>Top Creators</h4>
+                      {stats.topCreators.length === 0 ? <p className={styles.subtle}>No creator data.</p> : (
+                        <div className={styles.barChart}>
+                          {stats.topCreators.map(([handle, count]) => (
+                            <div className={styles.barRow} key={handle}>
+                              <span className={styles.barLabel}>{handle}</span>
+                              <div className={styles.barTrack}>
+                                <div className={styles.bar} style={{ width: `${(count / stats.topCreators[0][1]) * 100}%` }} />
+                              </div>
+                              <span className={styles.barCount}>{count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <h4>{card.creatorHandle || "Unknown creator"}</h4>
-                    <p className={styles.resultMeta}>{card.caption || "No caption captured."}</p>
 
-                    {(card.hashtags || []).length > 0 && (
-                      <div className={styles.hashtagRow}>
-                        {card.hashtags.slice(0, 6).map((tag) => (
-                          <button className={styles.hashtagPill} key={`${card.id}-${tag}`} type="button" onClick={() => setQuery(tag)}>
-                            {tag}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <div className={styles.statSection}>
+                      <h4>Top Hashtags</h4>
+                      {stats.topHashtags.length === 0 ? <p className={styles.subtle}>No hashtag data.</p> : (
+                        <div className={styles.barChart}>
+                          {stats.topHashtags.map(([tag, count]) => (
+                            <div className={styles.barRow} key={tag}>
+                              <span className={styles.barLabel}>{tag}</span>
+                              <div className={styles.barTrack}>
+                                <div className={styles.bar} style={{ width: `${(count / stats.topHashtags[0][1]) * 100}%` }} />
+                              </div>
+                              <span className={styles.barCount}>{count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
-                    {(card.semanticTags || []).length > 0 && (
-                      <div className={styles.semanticTagRow}>
-                        {card.semanticTags.map((tag) => (
-                          <button
-                            className={activeTopicTag === tag ? styles.semanticTagActive : styles.semanticTag}
-                            key={`${card.id}-st-${tag}`}
-                            type="button"
-                            onClick={() => setActiveTopicTag(activeTopicTag === tag ? "" : tag)}
-                          >
-                            {tag}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {card.summary && (
-                      <div className={styles.summaryBox}>
-                        <p className={styles.summaryBoxLabel}>AI Summary</p>
-                        <p className={styles.summaryText}>{card.summary}</p>
-                      </div>
-                    )}
-
-                    <div className={styles.linkRow}>
-                      <a className={styles.smallLink} href={card.canonicalUrl} target="_blank" rel="noreferrer">
-                        Open Post
-                      </a>
-                      {card.mediaType === "video" && (
-                        <button
-                          className={styles.smallLink}
-                          type="button"
-                          disabled={summarizing.has(card.id)}
-                          onClick={() => summarizeReel(card.id)}
-                        >
-                          {summarizing.has(card.id) ? "Summarizing..." : card.summary ? "Re-summarize" : "Summarize"}
-                        </button>
+                    <div className={styles.statSection}>
+                      <h4>Top AI Topics</h4>
+                      {stats.topTags.length === 0 ? <p className={styles.subtle}>Summarize reels to generate topics.</p> : (
+                        <div className={styles.barChart}>
+                          {stats.topTags.map(([tag, count]) => (
+                            <div className={styles.barRow} key={tag}>
+                              <span className={styles.barLabel}>{tag}</span>
+                              <div className={styles.barTrack}>
+                                <div className={styles.barOrange} style={{ width: `${(count / stats.topTags[0][1]) * 100}%` }} />
+                              </div>
+                              <span className={styles.barCount}>{count}</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>
-                </article>
-              ))}
+                </>
+              )}
             </div>
           )}
         </section>

@@ -2,7 +2,7 @@ const ALARM_NAME = "insta-ntiate-sync";
 const COLLECTION_LIMIT = 2;
 const POSTS_PER_COLLECTION = 5;
 const DEFAULT_SYNC_MINUTES = 30;
-const DEFAULT_APP_ENDPOINT = "http://localhost:3000/api/archive";
+const DEFAULT_APP_ENDPOINT = "http://localhost:3001/api/archive";
 
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureSettings();
@@ -49,13 +49,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (message?.type === "SET_APP_ENDPOINT") {
-    setAppEndpoint(message.endpoint)
-      .then((settings) => sendResponse({ ok: true, settings }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }));
-    return true;
-  }
-
   return false;
 });
 
@@ -82,7 +75,7 @@ async function runSync(trigger) {
     const account = await scrapeSavedCollections();
     const archive = {
       sourceAccount: {
-        username: account.username,
+        username: account.username || "unknown",
         lastSyncedAt: new Date().toISOString()
       },
       syncRun: {
@@ -138,8 +131,7 @@ async function runSync(trigger) {
 }
 
 async function scrapeSavedCollections() {
-  const username = await checkInstagramLogin();
-  const root = await scrapeSavedOverviewWithFallback(username);
+  const root = await scrapeSavedOverviewWithFallback();
   const savedTab = root.tab;
 
   try {
@@ -207,36 +199,11 @@ async function scrapeSavedCollections() {
   }
 }
 
-async function checkInstagramLogin() {
-  const tab = await createBackgroundTab("https://www.instagram.com/");
-
-  try {
-    const result = await sendTabMessage(tab.id, { type: "CHECK_LOGIN" });
-
-    if (!result.loggedIn) {
-      await chrome.tabs.create({
-        url: "https://www.instagram.com/accounts/login/",
-        active: true
-      });
-      throw new Error(
-        "You are not logged into Instagram. A login tab has been opened — please log in and then click Sync again."
-      );
-    }
-
-    return result.username;
-  } finally {
-    if (tab?.id) {
-      await chrome.tabs.remove(tab.id);
-    }
-  }
-}
-
-async function scrapeSavedOverviewWithFallback(username) {
+async function scrapeSavedOverviewWithFallback() {
   const candidateUrls = [
-    username ? `https://www.instagram.com/${username}/saved/` : null,
     "https://www.instagram.com/your_activity/interactions/saved/",
     "https://www.instagram.com/saved/"
-  ].filter(Boolean);
+  ];
 
   const errors = [];
 
@@ -251,7 +218,7 @@ async function scrapeSavedOverviewWithFallback(username) {
 
       return {
         ...payload,
-        username: payload.username || username || "",
+        username: payload.username || "",
         tab
       };
     } catch (error) {
@@ -376,67 +343,17 @@ async function setSyncInterval(minutes) {
   return nextSettings;
 }
 
-async function setAppEndpoint(endpoint) {
-  let parsed;
-  try {
-    parsed = new URL(endpoint);
-  } catch (_error) {
-    throw new Error("Invalid URL. Example: http://localhost:3001/api/archive");
-  }
-
-  if (!parsed.protocol.startsWith("http")) {
-    throw new Error("Endpoint must use http or https.");
-  }
-
-  const settings = await getSettings();
-  const nextSettings = { ...settings, appEndpoint: parsed.href };
-  await chrome.storage.local.set({ settings: nextSettings });
-  return nextSettings;
-}
-
 async function pushArchiveToApp(archive) {
   const settings = await getSettings();
+  const response = await fetch(settings.appEndpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(archive)
+  });
 
-  let primaryUrl;
-  try {
-    primaryUrl = new URL(settings.appEndpoint);
-  } catch (_error) {
-    primaryUrl = new URL(DEFAULT_APP_ENDPOINT);
+  if (!response.ok) {
+    throw new Error(`Archive push failed at ${settings.appEndpoint}. Make sure the Next app is running.`);
   }
-
-  const primaryPort = parseInt(primaryUrl.port || "3000", 10);
-  const candidatePorts = [primaryPort, 3000, 3001, 3002, 3003].filter(
-    (port, index, list) => list.indexOf(port) === index
-  );
-
-  const errors = [];
-
-  for (const port of candidatePorts) {
-    const candidateUrl = `${primaryUrl.protocol}//${primaryUrl.hostname}:${port}${primaryUrl.pathname}`;
-
-    try {
-      const response = await fetch(candidateUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(archive)
-      });
-
-      if (response.ok) {
-        if (port !== primaryPort) {
-          await chrome.storage.local.set({
-            settings: { ...settings, appEndpoint: candidateUrl }
-          });
-        }
-        return;
-      }
-
-      errors.push(`${candidateUrl}: HTTP ${response.status}`);
-    } catch (error) {
-      errors.push(`${candidateUrl}: ${error.message}`);
-    }
-  }
-
-  throw new Error(
-    `Archive push failed on all candidate ports. Tried: ${errors.join(" | ")}. Make sure the Next app is running.`
-  );
 }
