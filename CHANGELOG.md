@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-06-16 — Reliability hardening (audit follow-up)
+
+Fixes for issues found by an exhaustive multi-agent audit + test pass (17 confirmed
+real findings).
+
+### Fixed — web app
+- Windows write race: `writeArchive` uses a per-call unique temp filename and
+  retries `rename` on EPERM/EACCES/EBUSY, so the 4s archive poll (a constant
+  concurrent reader) can no longer make a write throw. Verified with a concurrency
+  stress test — 0 failures / all writes persisted (the audit reproduced ~250/500
+  failures on the old code).
+- `patchPost` serializes mutations (no lost note-vs-summary update) and reports
+  whether the post existed; `notes` returns 404 when it did not.
+- `readArchive` distinguishes a missing file (empty state) from a corrupt one
+  (logged, degrades to empty) and no longer masks real system errors.
+- Malformed archive can no longer white-screen the dashboard: array fields are
+  guarded with `Array.isArray`, the `archive` POST route rejects non-array
+  `posts`/`collections`/`memberships`, and a new `app/error.js` boundary catches
+  any render error.
+- `summarize` attaches the thumbnail only when it is actually an image (validated
+  content-type + 8 MB cap + 8s timeout), so an expired/non-image Instagram
+  thumbnail degrades to a text-only summary instead of a 502.
+- `summarizeReel`/`saveNote` no longer throw if the archive is cleared mid-request;
+  the Clear button is disabled while a summary/note is in flight.
+
+### Fixed — extension
+- Re-entrancy guard coalesces overlapping syncs (alarm + manual + startup) onto one
+  run, preventing duplicate worker tabs and last-writer-wins storage corruption.
+- `pushArchiveToApp` fetch has a 5s per-port timeout, so a hung dev server can't
+  stall the sync forever.
+- `sendTabMessage` stops retrying on deterministic scrape failures (transport
+  retries capped at 6), so a selector miss no longer burns a ~24s retry storm.
+- Keep-alive ping during the run, plus startup recovery that clears a stale
+  "running" status and reaps a leaked worker tab. The popup disables Sync during a
+  run and fails cleanly if the worker is torn down.
+
+### Known / not fixed
+- Full MV3 long-sync robustness (chunked, resumable crawl) is mitigated, not yet
+  re-architected.
+- Live Instagram selector stability is inherent to scraping; it cannot be tested
+  offline.
+- The AI features require a valid `ANTHROPIC_API_KEY` in `.env.local`. The
+  previously committed key was revoked after public exposure and must be replaced.
+
 ## 2026-06-16 — Extension: stop opening a tab per saved post
 
 ### Fixed

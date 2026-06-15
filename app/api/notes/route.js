@@ -9,6 +9,7 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   if (!postId) return NextResponse.json({ error: "postId required" }, { status: 400 });
-  await patchPost(postId, { note: note || "" });
+  const saved = await patchPost(postId, { note: note || "" });
+  if (!saved) return NextResponse.json({ error: "Post not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

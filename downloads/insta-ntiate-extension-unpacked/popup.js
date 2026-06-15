@@ -8,19 +8,29 @@ const statusText = document.getElementById("status-text");
 const statusDetail = document.getElementById("status-detail");
 
 syncButton.addEventListener("click", async () => {
-  setStatus("Running", "Opening Instagram saved collections in background tabs.");
+  if (syncButton.disabled) return;
+  syncButton.disabled = true;
+  setStatus("Running", "Scraping Instagram saved collections in a background tab.");
 
-  const response = await chrome.runtime.sendMessage({ type: "RUN_SYNC" });
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "RUN_SYNC" });
 
-  if (!response?.ok) {
-    setStatus("Failed", response?.error || "Sync failed.");
-    return;
+    if (!response?.ok) {
+      setStatus("Failed", response?.error || "Sync failed.");
+      return;
+    }
+
+    const archive = response.result;
+    const collectionCount = archive.collections?.length || 0;
+    const postCount = archive.posts?.length || 0;
+    setStatus("Completed", `Captured ${collectionCount} collections and ${postCount} posts.`);
+  } catch (error) {
+    // The service worker can be torn down mid-run, which closes the message
+    // channel; surface that as a real failure instead of an unhandled rejection.
+    setStatus("Failed", error?.message || "Sync did not complete (the background worker may have stopped).");
+  } finally {
+    syncButton.disabled = false;
   }
-
-  const archive = response.result;
-  const collectionCount = archive.collections?.length || 0;
-  const postCount = archive.posts?.length || 0;
-  setStatus("Completed", `Captured ${collectionCount} collections and ${postCount} posts.`);
 });
 
 exportButton.addEventListener("click", async () => {

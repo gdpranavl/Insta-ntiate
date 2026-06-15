@@ -12,8 +12,26 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(async () => {
   await ensureSettings();
   await scheduleSyncAlarm();
+  await recoverInterruptedRun();
   await runSync("startup");
 });
+
+async function recoverInterruptedRun() {
+  // If a previous run's worker was killed mid-sync, storage can be left with a
+  // permanent "running" status and a leaked background tab. Reconcile both.
+  const items = await chrome.storage.local.get(["syncRun", "workerTabId"]);
+  if (items.syncRun?.status === "running") {
+    await chrome.storage.local.set({
+      syncRun: { ...items.syncRun, status: "interrupted", completedAt: new Date().toISOString() }
+    });
+  }
+  if (items.workerTabId) {
+    try {
+      await chrome.tabs.remove(items.workerTabId);
+    } catch (_error) {}
+    await chrome.storage.local.remove("workerTabId");
+  }
+}
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== ALARM_NAME) {
@@ -67,7 +85,19 @@ async function scheduleSyncAlarm() {
   });
 }
 
-async function runSync(trigger) {
+// Coalesce overlapping syncs (alarm + manual + startup) onto one in-flight run so
+// they can't spawn duplicate worker tabs or race on shared storage.
+let activeSync = null;
+
+function runSync(trigger) {
+  if (activeSync) return activeSync;
+  activeSync = doSync(trigger).finally(() => {
+    activeSync = null;
+  });
+  return activeSync;
+}
+
+async function doSync(trigger) {
   const startedAt = new Date().toISOString();
   const syncRun = {
     trigger,
@@ -77,6 +107,10 @@ async function runSync(trigger) {
   };
 
   await chrome.storage.local.set({ syncRun });
+
+  // Reset the MV3 idle timer periodically so a multi-minute crawl is less likely
+  // to be torn down early (does not defeat the hard 5-minute single-event cap).
+  const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
 
   try {
     const account = await scrapeSavedCollections();
@@ -134,6 +168,8 @@ async function runSync(trigger) {
     };
     await chrome.storage.local.set({ syncRun: failedRun });
     throw error;
+  } finally {
+    clearInterval(keepAlive);
   }
 }
 
@@ -145,6 +181,7 @@ async function scrapeSavedCollections() {
   // tabs per sync, which both looks broken and is very slow. Now a single worker
   // tab is navigated from page to page.
   const worker = await createBackgroundTab("about:blank");
+  await chrome.storage.local.set({ workerTabId: worker.id });
   const errors = [];
 
   try {
@@ -208,6 +245,7 @@ async function scrapeSavedCollections() {
     if (worker?.id) {
       await chrome.tabs.remove(worker.id);
     }
+    await chrome.storage.local.remove("workerTabId");
   }
 }
 
@@ -306,17 +344,24 @@ async function sendTabMessage(tabId, message) {
   await waitForTabReady(tabId);
 
   let lastError = null;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  // Only a transport error (content script not yet injected) is worth retrying.
+  // A content-side {ok:false} is a deterministic scrape result that will not
+  // change on retry, so we stop immediately instead of burning ~12s of retries.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
     try {
       const response = await chrome.tabs.sendMessage(tabId, message);
       if (response?.ok) {
         return response.payload;
       }
       if (response && response.ok === false) {
-        lastError = new Error(response.error || "Scrape step failed.");
+        throw new Error(response.error || "Scrape step failed.");
       }
     } catch (error) {
       lastError = error;
+      const transient = /establish connection|Receiving end does not exist|message port closed|message channel closed/i.test(error.message || "");
+      if (!transient) {
+        break;
+      }
     }
 
     await delay(600);
@@ -451,7 +496,8 @@ async function pushArchiveToApp(archive) {
       const response = await fetch(candidateUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(archive)
+        body: JSON.stringify(archive),
+        signal: AbortSignal.timeout(5000)
       });
 
       if (response.ok) {

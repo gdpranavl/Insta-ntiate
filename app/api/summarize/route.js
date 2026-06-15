@@ -23,17 +23,26 @@ export async function POST(request) {
   const client = new Anthropic();
   const content = [];
 
+  const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
   if (post.thumbnailUrl) {
+    // Attaching the thumbnail is best-effort. A timeout, a non-image response
+    // (expired Instagram CDN URLs often 200 with an HTML login page), an
+    // unsupported subtype, or an oversized body all fall through to a
+    // text-only summary instead of failing the whole request.
     try {
-      const imgRes = await fetch(post.thumbnailUrl);
-      if (imgRes.ok) {
+      const imgRes = await fetch(post.thumbnailUrl, { signal: AbortSignal.timeout(8000) });
+      const contentType = (imgRes.headers.get("content-type") || "").split(";")[0].trim();
+      const supported = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+      const declaredLen = Number(imgRes.headers.get("content-length") || 0);
+      if (imgRes.ok && supported.includes(contentType) && declaredLen <= MAX_IMAGE_BYTES) {
         const imgBuf = await imgRes.arrayBuffer();
-        const b64 = Buffer.from(imgBuf).toString("base64");
-        const mediaType = imgRes.headers.get("content-type") || "image/jpeg";
-        content.push({
-          type: "image",
-          source: { type: "base64", media_type: mediaType, data: b64 },
-        });
+        if (imgBuf.byteLength <= MAX_IMAGE_BYTES) {
+          const b64 = Buffer.from(imgBuf).toString("base64");
+          content.push({
+            type: "image",
+            source: { type: "base64", media_type: contentType, data: b64 },
+          });
+        }
       }
     } catch (_error) {}
   }

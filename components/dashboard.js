@@ -89,9 +89,12 @@ export function Dashboard({ initialArchive }) {
 
   // ── Derived data ──
   const cards = useMemo(() => {
-    const collections = archive?.collections || [];
-    const posts = archive?.posts || [];
-    const memberships = archive?.memberships || [];
+    // Guard against a truthy-but-non-array field (a bad import or hand-edited
+    // archive) — `|| []` only catches null/undefined, and `.map` on a non-array
+    // would throw during render and white-screen the whole dashboard.
+    const collections = Array.isArray(archive?.collections) ? archive.collections : [];
+    const posts = Array.isArray(archive?.posts) ? archive.posts : [];
+    const memberships = Array.isArray(archive?.memberships) ? archive.memberships : [];
     const collectionMap = new Map(collections.map((c) => [c.id, c]));
     const membershipsByPost = new Map();
     memberships.forEach((m) => {
@@ -109,7 +112,8 @@ export function Dashboard({ initialArchive }) {
   }, [cards]);
 
   const collectionTitles = useMemo(() => {
-    return [...new Set((archive?.collections || []).map((c) => c.title).filter(Boolean))].sort();
+    const collections = Array.isArray(archive?.collections) ? archive.collections : [];
+    return [...new Set(collections.map((c) => c.title).filter(Boolean))].sort();
   }, [archive]);
 
   const topicTags = useMemo(() => {
@@ -245,12 +249,15 @@ export function Dashboard({ initialArchive }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Summarize failed");
-      setArchive((prev) => ({
-        ...prev,
-        posts: prev.posts.map((p) =>
-          p.id === postId ? { ...p, summary: data.summary, semanticTags: data.semanticTags || p.semanticTags } : p
-        ),
-      }));
+      setArchive((prev) => {
+        if (!prev?.posts) return prev; // archive was cleared mid-request
+        return {
+          ...prev,
+          posts: prev.posts.map((p) =>
+            p.id === postId ? { ...p, summary: data.summary, semanticTags: data.semanticTags || p.semanticTags } : p
+          ),
+        };
+      });
     } catch (err) {
       setStatus(`Could not summarize: ${err.message}`);
     } finally {
@@ -300,16 +307,25 @@ export function Dashboard({ initialArchive }) {
   }
 
   async function saveNote(postId) {
-    await fetch("/api/notes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ postId, note: noteDraft }),
-    });
-    setArchive((prev) => ({
-      ...prev,
-      posts: prev.posts.map((p) => p.id === postId ? { ...p, note: noteDraft } : p),
-    }));
-    setNoteEditId(null);
+    const draft = noteDraft;
+    try {
+      await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId, note: draft }),
+      });
+      setArchive((prev) => {
+        if (!prev?.posts) return prev; // archive was cleared mid-request
+        return {
+          ...prev,
+          posts: prev.posts.map((p) => p.id === postId ? { ...p, note: draft } : p),
+        };
+      });
+    } catch (err) {
+      setStatus(`Could not save note: ${err.message}`);
+    } finally {
+      setNoteEditId(null);
+    }
   }
 
   function startEditNote(card) {
@@ -341,9 +357,10 @@ export function Dashboard({ initialArchive }) {
     URL.revokeObjectURL(url);
   }
 
-  const postCount = archive?.posts?.length || 0;
-  const collectionCount = archive?.collections?.length || 0;
-  const reelCount = (archive?.posts || []).filter((p) => p.mediaType === "video").length;
+  const safePosts = Array.isArray(archive?.posts) ? archive.posts : [];
+  const postCount = safePosts.length;
+  const collectionCount = Array.isArray(archive?.collections) ? archive.collections.length : 0;
+  const reelCount = safePosts.filter((p) => p.mediaType === "video").length;
   const unsummarizedCount = cards.filter((c) => c.mediaType === "video" && !c.summary).length;
   const syncStamp = archive?.sourceAccount?.lastSyncedAt || archive?.syncRun?.completedAt;
 
@@ -488,7 +505,7 @@ export function Dashboard({ initialArchive }) {
                     </select>
                   )}
 
-                  <button className={styles.buttonGhost} type="button" onClick={clearArchive}>Clear</button>
+                  <button className={styles.buttonGhost} type="button" onClick={clearArchive} disabled={summarizing.size > 0 || bulkProgress !== null || noteEditId !== null}>Clear</button>
                 </div>
               </div>
 
