@@ -1,0 +1,25 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" x1="64" y1="4" x2="64" y2="124" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#26262C"/>
+      <stop offset="1" stop-color="#121214"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="64" y1="50" x2="64" y2="99" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F4EFE7"/>
+      <stop offset="1" stop-color="#DAD4C9"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.32" cy="0.18" r="0.95">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="4" y="4" width="120" height="120" rx="32" fill="url(#tile)"/>
+  <rect x="4" y="4" width="120" height="120" rx="32" fill="url(#sheen)"/>
+
+  <!-- spark / the dot of the "i" -->
+  <circle cx="64" cy="33" r="11" fill="#FF7AA8"/>
+
+  <!-- bookmark ribbon = the stem of the "i" + the save action -->
+  <path d="M49 60 Q49 50 59 50 L69 50 Q79 50 79 60 L79 99 L64 86 L49 99 Z" fill="url(#ribbon)"/>
+</svg>

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-06-15 — Branding: app icon & README
+
+### Added
+- New app icon — a mark fusing the letter "i", a bookmark (the save action), and a
+  spark dot, on a charcoal squircle with a cream ribbon and a pink accent. Added
+  `app/icon.svg` (web-app favicon) and `extension/icon.svg` with rendered PNGs at
+  16/32/48/128 under `extension/icons/`. Wired `icons` + `action.default_icon` into
+  the extension manifest and both packaged copies; rebuilt both extension `.zip`s.
+
+### Fixed
+- `README.md` was stored as UTF-16 and rendered as garbled, spaced-out text on
+  GitHub. Rewritten as proper UTF-8 with setup, run, and extension-loading docs.
+
 ## 2026-06-15 — Full-repo audit & fixes
 
 A full audit (install / build / lint / run) and code review was run across the
