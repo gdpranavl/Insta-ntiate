@@ -3,7 +3,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import { readArchive, patchPost } from "@/lib/archive-store";
 
 export async function POST(request) {
-  const { postId } = await request.json();
+  let postId;
+  try {
+    ({ postId } = await request.json());
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  if (!postId || typeof postId !== "string") {
+    return NextResponse.json({ error: "postId required" }, { status: 400 });
+  }
 
   const archive = await readArchive();
   const post = archive?.posts?.find((p) => p.id === postId);
@@ -42,22 +50,28 @@ Tags should be 5-8 short concept/theme labels (e.g. "morning routine", "travel t
 
   content.push({ type: "text", text: lines.join("\n") });
 
-  const message = await client.messages.create({
-    model: "claude-opus-4-8",
-    max_tokens: 512,
-    messages: [{ role: "user", content }],
-  });
+  let message;
+  try {
+    message = await client.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 512,
+      messages: [{ role: "user", content }],
+    });
+  } catch (error) {
+    return NextResponse.json({ error: `AI request failed: ${error.message}` }, { status: 502 });
+  }
 
   let summary = "";
   let semanticTags = [];
 
+  // Extract the text block once, safely, so the fallback never re-throws.
+  const rawText = (message.content.find((b) => b.type === "text")?.text ?? "").trim();
   try {
-    const raw = message.content[0].text.trim();
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(rawText);
     summary = parsed.summary || "";
     semanticTags = Array.isArray(parsed.tags) ? parsed.tags.map((t) => String(t).toLowerCase()) : [];
   } catch (_parseError) {
-    summary = message.content[0].text;
+    summary = rawText;
   }
 
   await patchPost(postId, { summary, semanticTags });

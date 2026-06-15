@@ -7,7 +7,15 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  const archive = await request.json();
+  let archive;
+  try {
+    archive = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  if (!archive || typeof archive !== "object" || Array.isArray(archive)) {
+    return NextResponse.json({ error: "Archive must be a JSON object" }, { status: 400 });
+  }
   await writeArchive(archive);
   return NextResponse.json({ ok: true });
 }

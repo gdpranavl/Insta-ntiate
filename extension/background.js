@@ -98,7 +98,7 @@ async function runSync(trigger) {
         postsCaptured: account.posts.length
       },
       notes: [
-        "This collector is intentionally bounded to the first two collections and first five posts per collection.",
+        "This collector is intentionally bounded to the first 20 saved collections and the first 25 posts per collection.",
         "Each saved item is opened in its own background tab so creator, caption, thumbnail, and video URL can be collected more reliably."
       ],
       warnings: []

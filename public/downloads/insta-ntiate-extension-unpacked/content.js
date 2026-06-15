@@ -142,12 +142,15 @@ async function scrapePostDetail(post, collectionTitle) {
     readCaptionFromMetaDescription(ogDescription) ||
     "";
 
+  const hashtags = extractHashtags(caption);
+
   return {
     id: post.id,
     shortcode: post.shortcode,
     canonicalUrl: normalizeInstagramUrl(post.canonicalUrl),
     creatorHandle,
     caption,
+    hashtags,
     mediaType: ogVideo || media.videoUrl ? "video" : "image",
     thumbnailUrl: media.thumbnailUrl || ogImage || "",
     videoUrl: media.videoUrl || ogVideo || "",
@@ -227,7 +230,7 @@ function readCaptionFromJsonScripts() {
     const text = script.textContent || "";
     const captionMatch = text.match(/"caption":"([^"]+)"/i) || text.match(/"accessibility_caption":"([^"]+)"/i);
     if (captionMatch?.[1]) {
-      return decodeEscapedText(captionMatch[1]).slice(0, 500);
+      return decodeEscapedText(captionMatch[1]).slice(0, 2200);
     }
   }
 
@@ -270,7 +273,15 @@ function readCaptionFromMetaDescription(text) {
     .replace(/\s*-\s*Instagram.*$/i, "")
     .trim();
 
-  return cleaned.slice(0, 500);
+  return cleaned.slice(0, 2200);
+}
+
+function extractHashtags(text) {
+  if (!text) {
+    return [];
+  }
+  const matches = text.match(/#[a-zA-Z0-9_]+/g) || [];
+  return [...new Set(matches.map((tag) => tag.toLowerCase()))];
 }
 
 function normalizeInstagramUrl(href) {

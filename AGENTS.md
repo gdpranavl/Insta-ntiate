@@ -41,10 +41,10 @@ Do not silently generalize prototype behavior into product truth.
 
 ## Required Startup Routine
 Before making changes, do this in order:
-1. Read [README.md](/D:/YouLeft/Insta-ntiate/README.md) for the top-level project entry point.
-2. Read [CONTEXT.md](/D:/YouLeft/Insta-ntiate/CONTEXT.md) to understand current product assumptions, decisions, and limitations.
-3. Read [SYSTEM_ARCHITECTURE.md](/D:/YouLeft/Insta-ntiate/SYSTEM_ARCHITECTURE.md) to understand the intended technical shape.
-4. Read [CHANGELOG.md](/D:/YouLeft/Insta-ntiate/CHANGELOG.md) to understand what changed most recently.
+1. Read [README.md](README.md) for the top-level project entry point.
+2. Read [CONTEXT.md](CONTEXT.md) to understand current product assumptions, decisions, and limitations.
+3. Read [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) to understand the intended technical shape.
+4. Read [CHANGELOG.md](CHANGELOG.md) to understand what changed most recently.
 5. Inspect the actual code before trusting any doc. Docs can lag reality.
 
 If code and docs conflict:
@@ -54,13 +54,13 @@ If code and docs conflict:
 
 ## Source Of Truth By File
 
-### [README.md](/D:/YouLeft/Insta-ntiate/README.md)
+### [README.md](README.md)
 Use for:
 - quick orientation
 - how to run the project
 - the shortest project summary
 
-### [CONTEXT.md](/D:/YouLeft/Insta-ntiate/CONTEXT.md)
+### [CONTEXT.md](CONTEXT.md)
 Use for:
 - current product direction
 - assumptions
@@ -69,7 +69,7 @@ Use for:
 
 Do not use it as proof that something is implemented.
 
-### [SYSTEM_ARCHITECTURE.md](/D:/YouLeft/Insta-ntiate/SYSTEM_ARCHITECTURE.md)
+### [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)
 Use for:
 - intended system boundaries
 - sync flow
@@ -78,7 +78,7 @@ Use for:
 
 Treat this as design guidance, not runtime truth.
 
-### [CHANGELOG.md](/D:/YouLeft/Insta-ntiate/CHANGELOG.md)
+### [CHANGELOG.md](CHANGELOG.md)
 Use for:
 - a concise history of meaningful changes and decisions
 - understanding why a recent change may exist

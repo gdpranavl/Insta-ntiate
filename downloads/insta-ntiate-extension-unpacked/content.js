@@ -8,6 +8,10 @@
 })();
 
 async function handleMessage(message) {
+  if (message?.type === "CHECK_LOGIN") {
+    return checkLoginStatus();
+  }
+
   if (message?.type === "SCRAPE_SAVED_OVERVIEW") {
     return scrapeSavedOverview(message.collectionLimit || 2);
   }
@@ -21,6 +25,40 @@ async function handleMessage(message) {
   }
 
   throw new Error("Unsupported scrape command.");
+}
+
+async function checkLoginStatus() {
+  await delay(2500);
+
+  if (window.location.pathname.includes("/accounts/login/") ||
+      window.location.pathname.includes("/accounts/emailsignup/")) {
+    return { loggedIn: false, username: null };
+  }
+
+  const username = readUsername() || readViewerUsername();
+  if (username) {
+    return { loggedIn: true, username };
+  }
+
+  return { loggedIn: false, username: null };
+}
+
+function readViewerUsername() {
+  const html = document.documentElement.innerHTML;
+  const patterns = [
+    /"viewer"\s*:\s*\{[^}]*?"username"\s*:\s*"([^"]+)"/,
+    /"config"\s*:\s*\{[^}]*?"viewer_id"\s*:\s*"[^"]*"[^}]*?"username"\s*:\s*"([^"]+)"/,
+    /"logging_page_id"\s*:\s*"[^"]*profilePage_(\d+)"/
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return "";
 }
 
 async function scrapeSavedOverview(collectionLimit) {
@@ -104,12 +142,15 @@ async function scrapePostDetail(post, collectionTitle) {
     readCaptionFromMetaDescription(ogDescription) ||
     "";
 
+  const hashtags = extractHashtags(caption);
+
   return {
     id: post.id,
     shortcode: post.shortcode,
     canonicalUrl: normalizeInstagramUrl(post.canonicalUrl),
     creatorHandle,
     caption,
+    hashtags,
     mediaType: ogVideo || media.videoUrl ? "video" : "image",
     thumbnailUrl: media.thumbnailUrl || ogImage || "",
     videoUrl: media.videoUrl || ogVideo || "",
@@ -189,7 +230,7 @@ function readCaptionFromJsonScripts() {
     const text = script.textContent || "";
     const captionMatch = text.match(/"caption":"([^"]+)"/i) || text.match(/"accessibility_caption":"([^"]+)"/i);
     if (captionMatch?.[1]) {
-      return decodeEscapedText(captionMatch[1]).slice(0, 500);
+      return decodeEscapedText(captionMatch[1]).slice(0, 2200);
     }
   }
 
@@ -232,7 +273,15 @@ function readCaptionFromMetaDescription(text) {
     .replace(/\s*-\s*Instagram.*$/i, "")
     .trim();
 
-  return cleaned.slice(0, 500);
+  return cleaned.slice(0, 2200);
+}
+
+function extractHashtags(text) {
+  if (!text) {
+    return [];
+  }
+  const matches = text.match(/#[a-zA-Z0-9_]+/g) || [];
+  return [...new Set(matches.map((tag) => tag.toLowerCase()))];
 }
 
 function normalizeInstagramUrl(href) {

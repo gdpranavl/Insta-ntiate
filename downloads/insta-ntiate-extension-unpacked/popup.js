@@ -2,6 +2,8 @@ const syncButton = document.getElementById("sync-button");
 const exportButton = document.getElementById("export-button");
 const intervalInput = document.getElementById("interval-input");
 const saveIntervalButton = document.getElementById("save-interval-button");
+const endpointInput = document.getElementById("endpoint-input");
+const saveEndpointButton = document.getElementById("save-endpoint-button");
 const statusText = document.getElementById("status-text");
 const statusDetail = document.getElementById("status-detail");
 
@@ -61,6 +63,22 @@ saveIntervalButton.addEventListener("click", async () => {
   setStatus("Timer saved", `Auto-sync interval set to ${response.settings.syncIntervalMinutes} minutes.`);
 });
 
+saveEndpointButton.addEventListener("click", async () => {
+  const endpoint = endpointInput.value.trim();
+  const response = await chrome.runtime.sendMessage({
+    type: "SET_APP_ENDPOINT",
+    endpoint,
+  });
+
+  if (!response?.ok) {
+    setStatus("Endpoint error", response?.error || "Could not save endpoint.");
+    return;
+  }
+
+  endpointInput.value = response.settings.appEndpoint;
+  setStatus("Endpoint saved", `Now pushing to ${response.settings.appEndpoint}`);
+});
+
 hydrateStatus();
 hydrateSettings();
 
@@ -88,6 +106,7 @@ function hydrateSettings() {
     }
 
     intervalInput.value = String(response.settings.syncIntervalMinutes);
+    endpointInput.value = response.settings.appEndpoint || "http://localhost:3000/api/archive";
   });
 }
 

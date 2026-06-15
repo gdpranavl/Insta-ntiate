@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "@/app/page.module.css";
 
 const demoArchive = {
@@ -67,6 +67,13 @@ export function Dashboard({ initialArchive }) {
   const [noteEditId, setNoteEditId] = useState(null);
   const [noteDraft, setNoteDraft] = useState("");
 
+  // ── Pause polling while the user is mid-edit so a disk read can't clobber an
+  //    in-flight note/summary or close an open note editor. ──
+  const skipPollRef = useRef(false);
+  useEffect(() => {
+    skipPollRef.current = noteEditId !== null || summarizing.size > 0 || bulkProgress !== null;
+  }, [noteEditId, summarizing, bulkProgress]);
+
   // ── Poll for archive updates every 4s ──
   useEffect(() => {
     const id = window.setInterval(async () => {
@@ -74,7 +81,7 @@ export function Dashboard({ initialArchive }) {
         const res = await fetch("/api/archive", { cache: "no-store" });
         if (!res.ok) return;
         const { archive: next } = await res.json();
-        if (next) setArchive(next);
+        if (next && !skipPollRef.current) setArchive(next);
       } catch {}
     }, 4000);
     return () => window.clearInterval(id);
@@ -142,8 +149,8 @@ export function Dashboard({ initialArchive }) {
     if (collectionFilter) result = result.filter((c) => (c.collections || []).includes(collectionFilter));
     if (activeTopicTag) result = result.filter((c) => (c.semanticTags || []).includes(activeTopicTag));
 
-    if (dateFrom) result = result.filter((c) => c.capturedAt && c.capturedAt >= dateFrom);
-    if (dateTo) result = result.filter((c) => c.capturedAt && c.capturedAt <= dateTo + "T23:59:59");
+    if (dateFrom) result = result.filter((c) => c.capturedAt && c.capturedAt.slice(0, 10) >= dateFrom);
+    if (dateTo) result = result.filter((c) => c.capturedAt && c.capturedAt.slice(0, 10) <= dateTo);
 
     const lower = query.trim().toLowerCase();
     if (lower) {
@@ -272,7 +279,11 @@ export function Dashboard({ initialArchive }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: aiQuery }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setStatus(`AI search failed: ${data.error || `HTTP ${res.status}`}`);
+        return;
+      }
       setAiResultIds(data.ids || []);
       setAiMode(true);
     } catch (err) {
@@ -316,9 +327,13 @@ export function Dashboard({ initialArchive }) {
 
   function exportCSV() {
     const cols = ["id", "creatorHandle", "mediaType", "caption", "hashtags", "semanticTags", "summary", "note", "capturedAt", "canonicalUrl"];
-    const rows = filteredCards.map((c) =>
-      cols.map((k) => `"${String(Array.isArray(c[k]) ? c[k].join(";") : c[k] || "").replace(/"/g, '""')}"`).join(",")
-    );
+    const csvCell = (value) => {
+      let s = String(Array.isArray(value) ? value.join(";") : value ?? "");
+      // Neutralize spreadsheet formula injection (leading =, +, -, @, tab, CR)
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+    const rows = filteredCards.map((c) => cols.map((k) => csvCell(c[k])).join(","));
     const blob = new Blob([[cols.join(","), ...rows].join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -564,7 +579,7 @@ export function Dashboard({ initialArchive }) {
               )}
               {aiMode && aiResultIds && (
                 <div className={styles.ctxBannerOrange}>
-                  <span>AI found <strong>{filteredCards.length}</strong> posts matching "{aiQuery}"</span>
+                  <span>AI found <strong>{filteredCards.length}</strong> posts matching &ldquo;{aiQuery}&rdquo;</span>
                 </div>
               )}
 
@@ -601,7 +616,7 @@ export function Dashboard({ initialArchive }) {
                 </article>
                 <article className={styles.summaryCard}>
                   <span className={styles.summaryLabel}>Last Sync</span>
-                  <strong>{syncStamp ? formatDate(syncStamp) : "Waiting for sync"}</strong>
+                  <strong suppressHydrationWarning>{syncStamp ? formatDate(syncStamp) : "Waiting for sync"}</strong>
                 </article>
               </div>
 
@@ -715,7 +730,7 @@ export function Dashboard({ initialArchive }) {
                             <button
                               className={styles.smallLink}
                               type="button"
-                              onClick={() => setSimilarBase(card)}
+                              onClick={() => { clearAiSearch(); setSimilarBase(card); }}
                             >
                               Similar
                             </button>

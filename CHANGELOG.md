@@ -1,5 +1,58 @@
 # Changelog
 
+## 2026-06-15 — Full-repo audit & fixes
+
+A full audit (install / build / lint / run) and code review was run across the
+web app and extension. Changes:
+
+### Security
+- Stopped tracking `.env.local` (it had been committed with a live
+  `ANTHROPIC_API_KEY`) and added `.env*` to `.gitignore`. **The previously
+  committed key should be rotated** — it still exists in git history.
+
+### Fixed
+- **Broken `lint` script** — Next 16 removed `next lint`. Migrated to the ESLint
+  CLI: added `eslint` + `eslint-config-next` flat config (`eslint.config.mjs`) and
+  changed the script to `eslint .`. Fixed 2 `react/no-unescaped-entities` errors.
+- **Hydration mismatch** on the "Last Sync" card — the server rendered 24-hour
+  time and the client rendered locale 12-hour time. Added `suppressHydrationWarning`
+  to the timestamp.
+- **Broken downloadable extension** — the distributed copies under
+  `public/downloads/` and `downloads/` were stale (new `popup.js` paired with old
+  `popup.html`, so the popup crashed; also missing the endpoint settings + port
+  scan). Re-synced both unpacked copies and rebuilt both `.zip`s from `extension/`.
+- **API routes hardened** — `search`, `summarize`, `archive`, and `notes` now
+  return `400` on malformed JSON instead of a `500`; the Claude calls in
+  `search`/`summarize` are wrapped and return `502` with a message on failure; the
+  `summarize` JSON-parse fallback no longer re-throws on an empty/non-text response.
+- **Polling no longer clobbers in-flight edits** — the 4s archive poll pauses
+  while a note is being edited or a (bulk) summarize is running.
+- **Date-range filter** — the `To` date now includes posts on the end-of-day
+  boundary (previously excluded by an ISO millisecond string comparison).
+- **CSV export** — neutralized spreadsheet formula injection (leading `= + - @`).
+- **Atomic archive writes** — `writeArchive` writes a temp file then renames, so a
+  concurrent reader never sees a half-written `archive.json`.
+- AI search now surfaces a real error instead of `undefined` on a non-OK response;
+  entering "Similar" mode clears any active AI search.
+- Corrected the `extension/background.js` archive note (it still said "first two
+  collections and first five posts"; actual limits are 20 / 25).
+
+### Docs
+- Rewrote `README.md` (was UTF-16 and effectively empty) with setup, run, and
+  extension-loading instructions.
+- Fixed `AGENTS.md` doc links that pointed at non-existent `/D:/YouLeft/` paths.
+
+### Config
+- Pinned `turbopack.root` in `next.config.mjs` to silence the multiple-lockfile
+  workspace-root warning.
+
+### Known / not changed
+- `npm audit` reports 2 moderate `postcss` advisories, but they come from Next 16's
+  own bundled `postcss`; the only `npm audit fix --force` path downgrades Next to
+  v9, so they are left as-is until Next bumps the dependency.
+- `patchPost` still has a read-modify-write race under truly concurrent writes,
+  which is acceptable for the local single-user dev flow.
+
 ## 2026-06-15
 
 ### Added
